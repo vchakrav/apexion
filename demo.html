@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ApexRust WASM Demo</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/typescript/5.3.3/typescript.min.js"></script>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                max-width: 1000px;
+                margin: 0 auto;
+                padding: 20px;
+                background: #1e1e1e;
+                color: #d4d4d4;
+            }
+            h1 {
+                color: #569cd6;
+            }
+            h2 {
+                color: #4ec9b0;
+                margin-top: 30px;
+            }
+            .panel {
+                background: #252526;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                padding: 15px;
+                margin: 10px 0;
+            }
+            textarea {
+                width: 100%;
+                min-height: 120px;
+                background: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                padding: 10px;
+                font-family: "Consolas", "Monaco", monospace;
+                font-size: 14px;
+                resize: vertical;
+                box-sizing: border-box;
+            }
+            button {
+                background: #0e639c;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                margin: 5px 5px 5px 0;
+            }
+            button:hover {
+                background: #1177bb;
+            }
+            button:disabled {
+                background: #3c3c3c;
+                cursor: not-allowed;
+            }
+            pre {
+                background: #1e1e1e;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                padding: 10px;
+                overflow-x: auto;
+                font-size: 13px;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+            .success {
+                color: #4ec9b0;
+            }
+            .error {
+                color: #f48771;
+            }
+            .warning {
+                color: #dcdcaa;
+            }
+            .sql {
+                color: #ce9178;
+            }
+            #status {
+                padding: 10px;
+                border-radius: 4px;
+                margin: 10px 0;
+            }
+            #status.loading {
+                background: #3c3c3c;
+            }
+            #status.ready {
+                background: #2d4f2d;
+            }
+            #status.error {
+                background: #4f2d2d;
+            }
+            select {
+                background: #3c3c3c;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
+                padding: 8px;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            label {
+                margin-right: 10px;
+            }
+            .examples {
+                margin-top: 10px;
+            }
+            .examples button {
+                background: #3c3c3c;
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+            .examples button:hover {
+                background: #4c4c4c;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>ApexRust WASM Demo</h1>
+        <div id="status" class="loading">Loading WASM module...</div>
+
+        <h2>1. Parse Apex Code</h2>
+        <div class="panel">
+            <textarea id="apexInput">
+public class AccountService {
+    public List<Account> getActiveAccounts() {
+        return [SELECT Id, Name, Industry FROM Account WHERE IsDeleted = false];
+    }
+
+    public Account getAccountById(Id accountId) {
+        return [SELECT Id, Name,
+                (SELECT Id, FirstName, LastName FROM Contacts)
+                FROM Account
+                WHERE Id = :accountId];
+    }
+}</textarea
+            >
+            <br /><br />
+            <button id="parseBtn" disabled>Parse Apex</button>
+            <pre id="parseResult">Results will appear here...</pre>
+        </div>
+
+        <h2>2. Convert SOQL to SQL</h2>
+        <div class="panel">
+            <textarea id="soqlInput">
+SELECT Id, Name, Industry FROM Account WHERE Industry = 'Technology' ORDER BY Name LIMIT 10</textarea
+            >
+            <br /><br />
+            <label>Dialect:</label>
+            <select id="dialect">
+                <option value="sqlite">SQLite</option>
+                <option value="postgres">PostgreSQL</option>
+            </select>
+            <button id="convertBtn" disabled>Convert to SQL</button>
+
+            <div class="examples">
+                <strong>Examples:</strong>
+                <button
+                    data-soql="SELECT Id, FirstName, LastName, Account.Name FROM Contact"
+                >
+                    Parent Relationship
+                </button>
+                <button
+                    data-soql="SELECT Id, Name FROM Account WHERE Id = :accountId"
+                >
+                    Bind Variable
+                </button>
+                <button
+                    data-soql="SELECT Industry, COUNT(Id) FROM Account GROUP BY Industry"
+                >
+                    Aggregate
+                </button>
+                <button
+                    data-soql="SELECT Id, Name, (SELECT Id, FirstName FROM Contacts) FROM Account"
+                >
+                    Child Subquery
+                </button>
+                <button
+                    data-soql="SELECT Id, Name FROM Account WHERE CreatedDate = TODAY"
+                >
+                    Date Literal
+                </button>
+            </div>
+
+            <pre id="convertResult">Results will appear here...</pre>
+        </div>
+
+        <h2>3. Generate DDL</h2>
+        <div class="panel">
+            <button id="ddlBtn" disabled>
+                Generate DDL for Sales Cloud Schema
+            </button>
+            <pre id="ddlResult">Results will appear here...</pre>
+        </div>
+
+        <h2>4. Transpile Apex to TypeScript</h2>
+        <div class="panel">
+            <textarea id="transpileInput">
+public class AccountService {
+    private String orgId;
+
+    public AccountService(String orgId) {
+        this.orgId = orgId;
+    }
+
+    public List<Account> getActiveAccounts() {
+        List<Account> accounts = [SELECT Id, Name, Industry
+                                  FROM Account
+                                  WHERE IsDeleted = false
+                                  ORDER BY Name];
+        return accounts;
+    }
+
+    public void createAccount(String name, String industry) {
+        Account acc = new Account();
+        acc.Name = name;
+        acc.Industry = industry;
+        insert acc;
+    }
+
+    public Integer countByIndustry(String industry) {
+        List<Account> accounts = [SELECT Id FROM Account WHERE Industry = :industry];
+        return accounts.size();
+    }
+}</textarea
+            >
+            <br /><br />
+            <label>
+                <input type="checkbox" id="tsMode" checked /> TypeScript (vs
+                JavaScript)
+            </label>
+            <label>
+                <input type="checkbox" id="asyncMode" checked /> Async Database
+            </label>
+            <button id="transpileBtn" disabled>Transpile to TypeScript</button>
+            <button id="runTranspiledBtn" disabled>Transpile & Run</button>
+            <pre id="transpileResult">Results will appear here...</pre>
+        </div>
+
+        <h2>5. Run SQL in Browser (SQLite)</h2>
+        <div class="panel">
+            <button id="initDbBtn" disabled>Initialize SQLite Database</button>
+            <button id="insertDataBtn" disabled>Insert Sample Data</button>
+            <span id="dbStatus"></span>
+            <br /><br />
+            <label>Example SOQL Queries:</label>
+            <select id="soqlExamples" disabled>
+                <option value="">-- Select a query --</option>
+                <optgroup label="Basic SELECT">
+                    <option value="SELECT Id, Name, Industry FROM Account">
+                        Simple select
+                    </option>
+                    <option
+                        value="SELECT Id, FirstName, LastName, Email FROM Contact"
+                    >
+                        Contact fields
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Amount, StageName FROM Opportunity"
+                    >
+                        Opportunity fields
+                    </option>
+                </optgroup>
+                <optgroup label="WHERE Clauses">
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Industry = 'Technology'"
+                    >
+                        Equals filter
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Amount FROM Opportunity WHERE Amount > 100000"
+                    >
+                        Greater than
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Industry != 'Technology'"
+                    >
+                        Not equals
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Industry IN ('Technology', 'Healthcare')"
+                    >
+                        IN clause
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Industry NOT IN ('Finance')"
+                    >
+                        NOT IN clause
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Name LIKE 'Acme%'"
+                    >
+                        LIKE pattern
+                    </option>
+                </optgroup>
+                <optgroup label="ORDER BY & LIMIT">
+                    <option
+                        value="SELECT Id, Name, AnnualRevenue FROM Account ORDER BY AnnualRevenue DESC"
+                    >
+                        Order descending
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account ORDER BY Name ASC LIMIT 3"
+                    >
+                        Limit results
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Amount FROM Opportunity ORDER BY Amount DESC LIMIT 2"
+                    >
+                        Top opportunities
+                    </option>
+                </optgroup>
+                <optgroup label="Aggregate Functions">
+                    <option value="SELECT COUNT(Id) FROM Account">
+                        Count all
+                    </option>
+                    <option value="SELECT SUM(Amount) FROM Opportunity">
+                        Sum amounts
+                    </option>
+                    <option value="SELECT AVG(Amount) FROM Opportunity">
+                        Average amount
+                    </option>
+                    <option
+                        value="SELECT MIN(Amount), MAX(Amount) FROM Opportunity"
+                    >
+                        Min and Max
+                    </option>
+                    <option
+                        value="SELECT Industry, COUNT(Id) FROM Account GROUP BY Industry"
+                    >
+                        Group by
+                    </option>
+                    <option
+                        value="SELECT StageName, SUM(Amount) FROM Opportunity GROUP BY StageName"
+                    >
+                        Sum by stage
+                    </option>
+                </optgroup>
+                <optgroup label="Parent Relationships (JOINs)">
+                    <option
+                        value="SELECT Id, FirstName, LastName, Account.Name FROM Contact"
+                    >
+                        Contact with Account name
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Account.Name, Account.Industry FROM Opportunity"
+                    >
+                        Opp with Account
+                    </option>
+                    <option
+                        value="SELECT Id, FirstName, Account.Name, Account.Industry FROM Contact WHERE Account.Industry = 'Technology'"
+                    >
+                        Filter by parent field
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Amount, Account.Name, Account.AnnualRevenue FROM Opportunity WHERE Account.AnnualRevenue > 1000000"
+                    >
+                        Opp where Account revenue > 1M
+                    </option>
+                    <option
+                        value="SELECT Id, Email, Account.Name FROM Contact ORDER BY Account.Name"
+                    >
+                        Contacts ordered by Account
+                    </option>
+                    <option
+                        value="SELECT Id, FirstName, LastName, Account.Name, Account.Industry FROM Contact WHERE Account.Industry != 'Finance'"
+                    >
+                        Exclude by parent field
+                    </option>
+                </optgroup>
+                <optgroup label="Complex Queries">
+                    <option
+                        value="SELECT Id, Name, Industry FROM Account WHERE Industry = 'Technology' AND AnnualRevenue > 1000000"
+                    >
+                        AND condition
+                    </option>
+                    <option
+                        value="SELECT Id, Name FROM Account WHERE Industry = 'Technology' OR Industry = 'Healthcare'"
+                    >
+                        OR condition
+                    </option>
+                    <option
+                        value="SELECT Id, Name, Amount, StageName FROM Opportunity WHERE IsClosed = 0 ORDER BY Amount DESC"
+                    >
+                        Open opps by amount
+                    </option>
+                </optgroup>
+            </select>
+            <br /><br />
+            <textarea id="sqlInput">
+SELECT Id, Name, Industry FROM Account</textarea
+            >
+            <br /><br />
+            <button id="runSqlBtn" disabled>Run SQL</button>
+            <button id="runSoqlBtn" disabled>Convert SOQL & Run</button>
+            <pre id="sqlResult">Initialize database first...</pre>
+        </div>
+
+        <script type="module">
+            import init, {
+                parseApex,
+                convertSoqlToSql,
+                generateDdl,
+                transpileApex,
+                getRuntimeInterface,
+                WasmSchema,
+            } from "./pkg/apexrust.js";
+
+            const status = document.getElementById("status");
+            const parseBtn = document.getElementById("parseBtn");
+            const convertBtn = document.getElementById("convertBtn");
+            const ddlBtn = document.getElementById("ddlBtn");
+            const transpileBtn = document.getElementById("transpileBtn");
+
+            let schema;
+
+            async function initialize() {
+                try {
+                    await init();
+
+                    // Create schema with standard Sales Cloud objects
+                    schema = new WasmSchema();
+                    schema.loadSalesCloud();
+
+                    status.textContent = `WASM loaded! Schema has ${schema.getObjectNames().length} objects: ${schema.getObjectNames().slice(0, 5).join(", ")}...`;
+                    status.className = "ready";
+
+                    parseBtn.disabled = false;
+                    convertBtn.disabled = false;
+                    ddlBtn.disabled = false;
+                    transpileBtn.disabled = false;
+                } catch (err) {
+                    status.textContent = `Error loading WASM: ${err.message}`;
+                    status.className = "error";
+                    console.error(err);
+                }
+            }
+
+            // Parse Apex
+            parseBtn.addEventListener("click", () => {
+                const apex = document.getElementById("apexInput").value;
+                console.log("Parsing apex code...");
+
+                try {
+                    const result = parseApex(apex);
+                    console.log("Raw result:", result);
+                    console.log("Result type:", typeof result);
+
+                    let html = "";
+                    if (result && result.success) {
+                        html = `<span class="success">Parse successful!</span>\n\n`;
+                        html += `<span class="warning">SOQL Queries Found: ${result.soqlQueries?.length || 0}</span>\n`;
+                        if (result.soqlQueries?.length) {
+                            result.soqlQueries.forEach((q, i) => {
+                                html += `\n[${i + 1}] ${q.substring(0, 200)}${q.length > 200 ? "..." : ""}\n`;
+                            });
+                        }
+                    } else if (result) {
+                        html = `<span class="error">Parse failed: ${result.error || JSON.stringify(result)}</span>`;
+                    } else {
+                        html = `<span class="error">Parse returned: ${result}. Check browser console (F12).</span>`;
+                    }
+
+                    document.getElementById("parseResult").innerHTML = html;
+                } catch (err) {
+                    console.error("Exception during parse:", err);
+                    document.getElementById("parseResult").innerHTML =
+                        `<span class="error">Exception: ${err.message}\n${err.stack}</span>`;
+                }
+            });
+
+            // Convert SOQL
+            convertBtn.addEventListener("click", () => {
+                const soql = document.getElementById("soqlInput").value;
+                const dialect = document.getElementById("dialect").value;
+
+                const result = convertSoqlToSql(soql, schema, dialect);
+
+                let html = "";
+                if (result.success) {
+                    html = `<span class="success">Conversion successful!</span>\n\n`;
+                    html += `<span class="sql">${result.sql}</span>\n`;
+
+                    if (result.parameters?.length) {
+                        html += `\n<span class="warning">Parameters:</span>\n`;
+                        result.parameters.forEach((p) => {
+                            html += `  ${p.placeholder} <- :${p.originalName}\n`;
+                        });
+                    }
+
+                    if (result.warnings?.length) {
+                        html += `\n<span class="warning">Warnings:</span>\n`;
+                        result.warnings.forEach((w) => {
+                            html += `  - ${w}\n`;
+                        });
+                    }
+                } else {
+                    html = `<span class="error">Conversion failed: ${result.error}</span>`;
+                }
+
+                document.getElementById("convertResult").innerHTML = html;
+            });
+
+            // Example buttons
+            document.querySelectorAll("[data-soql]").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    document.getElementById("soqlInput").value =
+                        btn.dataset.soql;
+                });
+            });
+
+            // Generate DDL
+            ddlBtn.addEventListener("click", () => {
+                const dialect = document.getElementById("dialect").value;
+                const result = generateDdl(schema, dialect);
+
+                let html = "";
+                if (result.success) {
+                    html = `<span class="success">DDL generated for ${dialect}!</span>\n\n`;
+                    html += `<span class="sql">${result.ddl}</span>`;
+                } else {
+                    html = `<span class="error">DDL generation failed: ${result.error}</span>`;
+                }
+
+                document.getElementById("ddlResult").innerHTML = html;
+            });
+
+            // Transpile Apex to TypeScript
+            transpileBtn.addEventListener("click", () => {
+                const apex = document.getElementById("transpileInput").value;
+                const tsMode = document.getElementById("tsMode").checked;
+                const asyncMode = document.getElementById("asyncMode").checked;
+
+                const options = {
+                    typescript: tsMode,
+                    asyncDatabase: asyncMode,
+                    includeImports: true,
+                };
+
+                const result = transpileApex(apex, options);
+
+                let html = "";
+                if (result.success) {
+                    html = `<span class="success">Transpilation successful!</span>\n\n`;
+                    html += `<span class="sql">${escapeHtml(result.typescript)}</span>`;
+                } else {
+                    html = `<span class="error">Transpilation failed: ${result.error}</span>`;
+                }
+
+                document.getElementById("transpileResult").innerHTML = html;
+            });
+
+            // Helper to escape HTML
+            function escapeHtml(text) {
+                const div = document.createElement("div");
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            // Run transpiled Apex code
+            const runTranspiledBtn =
+                document.getElementById("runTranspiledBtn");
+            runTranspiledBtn.addEventListener("click", async () => {
+                if (!db) {
+                    document.getElementById("transpileResult").innerHTML =
+                        `<span class="error">Please initialize the SQLite database first (Section 5)</span>`;
+                    return;
+                }
+
+                const apex = document.getElementById("transpileInput").value;
+
+                // Transpile to JavaScript (not TypeScript, so we can eval it)
+                const options = {
+                    typescript: false,
+                    asyncDatabase: true,
+                    includeImports: false,
+                };
+
+                const result = transpileApex(apex, options);
+
+                if (!result.success) {
+                    document.getElementById("transpileResult").innerHTML =
+                        `<span class="error">Transpilation failed: ${result.error}</span>`;
+                    return;
+                }
+
+                let html = `<span class="success">Transpiled JavaScript:</span>\n\n`;
+                html += `<span class="sql">${escapeHtml(result.typescript)}</span>\n\n`;
+                html += `<span class="warning">Executing...</span>\n\n`;
+                document.getElementById("transpileResult").innerHTML = html;
+
+                try {
+                    // Create a runtime that uses our SQLite database
+                    const $runtime = createBrowserRuntime(db, schema);
+
+                    // Execute the transpiled code
+                    const execResult = await executeTranspiledCode(
+                        result.typescript,
+                        $runtime,
+                    );
+
+                    html += `<span class="success">Execution complete!</span>\n\n`;
+                    if (execResult !== undefined && execResult !== null) {
+                        html += `<span class="warning">Result:</span>\n`;
+                        html += `<span class="sql">${escapeHtml(JSON.stringify(execResult, null, 2))}</span>`;
+                    }
+                    document.getElementById("transpileResult").innerHTML = html;
+                } catch (err) {
+                    html += `<span class="error">Execution error: ${err.message}</span>\n`;
+                    html += `<span class="error">${err.stack}</span>`;
+                    document.getElementById("transpileResult").innerHTML = html;
+                    console.error(err);
+                }
+            });
+
+            // Create a browser runtime that wraps SQLite
+            function createBrowserRuntime(sqliteDb, wasmSchema) {
+                return {
+                    async query(soql, binds) {
+                        // Normalize SOQL: collapse whitespace, trim
+                        const normalizedSoql = soql.replace(/\s+/g, " ").trim();
+
+                        // Convert SOQL to SQL
+                        const conv = convertSoqlToSql(
+                            normalizedSoql,
+                            wasmSchema,
+                            "sqlite",
+                        );
+                        if (!conv.success) {
+                            throw new Error(
+                                `SOQL conversion failed: ${conv.error}`,
+                            );
+                        }
+
+                        console.log("SOQL:", normalizedSoql);
+                        console.log("SQL:", conv.sql);
+
+                        // Execute SQL
+                        const results = sqliteDb.exec(conv.sql);
+                        if (results.length === 0) return [];
+
+                        // Convert to objects
+                        const { columns, values } = results[0];
+                        return values.map((row) => {
+                            const obj = {};
+                            columns.forEach((col, i) => {
+                                // Convert snake_case to camelCase for field names
+                                const fieldName = col.replace(
+                                    /_([a-z])/g,
+                                    (_, c) => c.toUpperCase(),
+                                );
+                                obj[fieldName] = row[i];
+                            });
+                            return obj;
+                        });
+                    },
+
+                    async insert(records) {
+                        const recordArray = Array.isArray(records)
+                            ? records
+                            : [records];
+                        const ids = [];
+
+                        for (const record of recordArray) {
+                            // Infer table name from record type or Id prefix
+                            const tableName = inferTableName(record);
+                            const id = record.Id || generateId(tableName);
+                            record.Id = id;
+
+                            const fields = Object.keys(record);
+                            const columns = fields.map(
+                                (f) => `"${camelToSnake(f)}"`,
+                            );
+                            const values = fields.map((f) => {
+                                const v = record[f];
+                                return typeof v === "string"
+                                    ? `'${v.replace(/'/g, "''")}'`
+                                    : v;
+                            });
+
+                            const sql = `INSERT INTO "${tableName}" (${columns.join(", ")}) VALUES (${values.join(", ")})`;
+                            console.log("Insert SQL:", sql);
+                            sqliteDb.run(sql);
+                            ids.push(id);
+                        }
+
+                        return ids;
+                    },
+
+                    async update(records) {
+                        const recordArray = Array.isArray(records)
+                            ? records
+                            : [records];
+
+                        for (const record of recordArray) {
+                            if (!record.Id)
+                                throw new Error("Id required for update");
+
+                            const tableName = inferTableName(record);
+                            const fields = Object.keys(record).filter(
+                                (f) => f !== "Id",
+                            );
+                            const setClauses = fields.map((f) => {
+                                const v = record[f];
+                                const val =
+                                    typeof v === "string"
+                                        ? `'${v.replace(/'/g, "''")}'`
+                                        : v;
+                                return `"${camelToSnake(f)}" = ${val}`;
+                            });
+
+                            const sql = `UPDATE "${tableName}" SET ${setClauses.join(", ")} WHERE "id" = '${record.Id}'`;
+                            console.log("Update SQL:", sql);
+                            sqliteDb.run(sql);
+                        }
+                    },
+
+                    async delete(records) {
+                        const recordArray = Array.isArray(records)
+                            ? records
+                            : [records];
+
+                        for (const record of recordArray) {
+                            const id =
+                                typeof record === "string" ? record : record.Id;
+                            if (!id) throw new Error("Id required for delete");
+
+                            const tableName =
+                                typeof record === "string"
+                                    ? inferTableFromId(id)
+                                    : inferTableName(record);
+                            const sql = `DELETE FROM "${tableName}" WHERE "id" = '${id}'`;
+                            console.log("Delete SQL:", sql);
+                            sqliteDb.run(sql);
+                        }
+                    },
+
+                    async upsert(records) {
+                        const recordArray = Array.isArray(records)
+                            ? records
+                            : [records];
+                        for (const record of recordArray) {
+                            if (record.Id) {
+                                await this.update([record]);
+                            } else {
+                                await this.insert([record]);
+                            }
+                        }
+                    },
+
+                    async undelete(records) {
+                        throw new Error("Undelete not supported in SQLite");
+                    },
+                };
+            }
+
+            // Helper functions for runtime
+            function camelToSnake(str) {
+                return str
+                    .replace(/([A-Z])/g, "_$1")
+                    .toLowerCase()
+                    .replace(/^_/, "");
+            }
+
+            function inferTableName(record) {
+                if (record.Id) return inferTableFromId(record.Id);
+                // Default guess based on fields
+                if (record.FirstName || record.LastName) return "contact";
+                if (record.Amount || record.StageName) return "opportunity";
+                return "account";
+            }
+
+            function inferTableFromId(id) {
+                const prefix = id.substring(0, 3);
+                const map = {
+                    "001": "account",
+                    "003": "contact",
+                    "006": "opportunity",
+                    "00Q": "lead",
+                    500: "case",
+                };
+                return map[prefix] || "account";
+            }
+
+            function generateId(tableName) {
+                const prefixMap = {
+                    account: "001",
+                    contact: "003",
+                    opportunity: "006",
+                    lead: "00Q",
+                    case: "500",
+                };
+                const prefix = prefixMap[tableName] || "000";
+                return (
+                    prefix +
+                    Math.random().toString(36).substring(2, 15).padEnd(15, "0")
+                );
+            }
+
+            // Execute transpiled code
+            async function executeTranspiledCode(tsCode, $runtime) {
+                // Strip export keywords (not needed for eval)
+                let cleanTs = tsCode
+                    .replace(/^export /gm, "")
+                    .replace(/export default /g, "")
+                    .replace(/export \{[^}]*\};?\n?/g, "");
+
+                // Compile TypeScript to JavaScript using the browser TypeScript compiler
+                const jsCode = ts.transpile(cleanTs, {
+                    target: ts.ScriptTarget.ES2020,
+                    module: ts.ModuleKind.None,
+                    experimentalDecorators: true,
+                });
+
+                console.log("Compiled JS:", jsCode);
+
+                // Extract class name from the original code
+                const classMatch = cleanTs.match(/class\s+(\w+)/);
+                if (!classMatch) {
+                    throw new Error("No class found in transpiled code");
+                }
+                const className = classMatch[1];
+
+                // Wrap code to capture the class and create an instance
+                const wrappedCode = `
+                    ${jsCode}
+
+                    // Create instance and find a method to call
+                    const instance = new ${className}();
+
+                    // Find first public method that returns something
+                    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(instance))
+                        .filter(m => m !== 'constructor' && typeof instance[m] === 'function');
+
+                    if (methods.length === 0) {
+                        return { _info: 'No methods found to execute' };
+                    }
+
+                    // Try to call the first method that looks like a getter
+                    const getterMethod = methods.find(m => m.startsWith('get') || m.startsWith('find') || m.startsWith('query'));
+                    const methodToCall = getterMethod || methods[0];
+
+                    console.log('Calling method:', methodToCall);
+                    return await instance[methodToCall]();
+                `;
+
+                // Create async function and execute
+                const AsyncFunction = Object.getPrototypeOf(
+                    async function () {},
+                ).constructor;
+                const fn = new AsyncFunction("$runtime", wrappedCode);
+                return await fn($runtime);
+            }
+
+            // ================================================================
+            // SQLite in-browser execution
+            // ================================================================
+
+            const initDbBtn = document.getElementById("initDbBtn");
+            const insertDataBtn = document.getElementById("insertDataBtn");
+            const runSqlBtn = document.getElementById("runSqlBtn");
+            const runSoqlBtn = document.getElementById("runSoqlBtn");
+            const dbStatus = document.getElementById("dbStatus");
+            const sqlResult = document.getElementById("sqlResult");
+            const soqlExamples = document.getElementById("soqlExamples");
+
+            // Example query dropdown
+            soqlExamples.addEventListener("change", () => {
+                if (soqlExamples.value) {
+                    document.getElementById("sqlInput").value =
+                        soqlExamples.value;
+                }
+            });
+
+            let db = null;
+
+            // Initialize SQLite
+            initDbBtn.addEventListener("click", async () => {
+                try {
+                    dbStatus.textContent = "Loading SQLite...";
+                    dbStatus.className = "warning";
+
+                    const SQL = await initSqlJs({
+                        locateFile: (file) =>
+                            `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`,
+                    });
+
+                    db = new SQL.Database();
+
+                    // Generate and execute DDL
+                    const ddlResult = generateDdl(schema, "sqlite");
+                    if (!ddlResult.success) {
+                        throw new Error(ddlResult.error);
+                    }
+
+                    // Execute each statement
+                    const statements = ddlResult.ddl
+                        .split(";")
+                        .filter((s) => s.trim());
+                    let tableCount = 0;
+                    for (const stmt of statements) {
+                        if (stmt.trim()) {
+                            try {
+                                db.run(stmt);
+                                if (stmt.includes("CREATE TABLE")) tableCount++;
+                            } catch (e) {
+                                console.warn("DDL statement failed:", stmt, e);
+                            }
+                        }
+                    }
+
+                    dbStatus.textContent = ` Database ready! Created ${tableCount} tables.`;
+                    dbStatus.className = "success";
+
+                    insertDataBtn.disabled = false;
+                    runSqlBtn.disabled = false;
+                    runSoqlBtn.disabled = false;
+                    soqlExamples.disabled = false;
+                    runTranspiledBtn.disabled = false;
+
+                    sqlResult.innerHTML = `<span class="success">SQLite database initialized with Sales Cloud schema.</span>\n\nTry: SELECT name FROM sqlite_master WHERE type='table'`;
+                } catch (err) {
+                    dbStatus.textContent = ` Error: ${err.message}`;
+                    dbStatus.className = "error";
+                    console.error(err);
+                }
+            });
+
+            // Insert sample data
+            insertDataBtn.addEventListener("click", () => {
+                if (!db) return;
+
+                try {
+                    // Insert sample accounts
+                    db.run(`INSERT INTO "account" (id, name, industry, annual_revenue, is_deleted) VALUES
+                        ('001000000000001', 'Acme Corporation', 'Technology', 5000000, 0),
+                        ('001000000000002', 'Global Industries', 'Manufacturing', 12000000, 0),
+                        ('001000000000003', 'Tech Startup Inc', 'Technology', 500000, 0),
+                        ('001000000000004', 'Healthcare Plus', 'Healthcare', 8000000, 0),
+                        ('001000000000005', 'Finance Corp', 'Finance', 25000000, 0)`);
+
+                    // Insert sample contacts
+                    db.run(`INSERT INTO "contact" (id, first_name, last_name, email, account_id) VALUES
+                        ('003000000000001', 'John', 'Doe', 'john.doe@acme.com', '001000000000001'),
+                        ('003000000000002', 'Jane', 'Smith', 'jane.smith@acme.com', '001000000000001'),
+                        ('003000000000003', 'Bob', 'Johnson', 'bob@global.com', '001000000000002'),
+                        ('003000000000004', 'Alice', 'Williams', 'alice@techstartup.com', '001000000000003'),
+                        ('003000000000005', 'Charlie', 'Brown', 'charlie@healthcare.com', '001000000000004')`);
+
+                    // Insert sample opportunities
+                    db.run(`INSERT INTO "opportunity" (id, name, amount, stage_name, account_id, is_closed, is_won, close_date) VALUES
+                        ('006000000000001', 'Acme Big Deal', 100000, 'Negotiation', '001000000000001', 0, 0, '2025-03-15'),
+                        ('006000000000002', 'Global Expansion', 500000, 'Closed Won', '001000000000002', 1, 1, '2025-01-20'),
+                        ('006000000000003', 'Tech Integration', 75000, 'Proposal', '001000000000003', 0, 0, '2025-04-30'),
+                        ('006000000000004', 'Healthcare System', 250000, 'Qualification', '001000000000004', 0, 0, '2025-06-01')`);
+
+                    sqlResult.innerHTML =
+                        `<span class="success">Sample data inserted!</span>\n\n` +
+                        `- 5 Accounts\n- 5 Contacts\n- 4 Opportunities\n\n` +
+                        `Try these queries:\n` +
+                        `  SELECT id, name, industry FROM account\n` +
+                        `  SELECT first_name, last_name, email FROM contact\n` +
+                        `  SELECT name, amount, stage_name FROM opportunity`;
+                } catch (err) {
+                    sqlResult.innerHTML = `<span class="error">Error inserting data: ${err.message}</span>`;
+                    console.error(err);
+                }
+            });
+
+            // Run raw SQL
+            runSqlBtn.addEventListener("click", () => {
+                if (!db) return;
+
+                const sql = document.getElementById("sqlInput").value;
+
+                try {
+                    const results = db.exec(sql);
+
+                    if (results.length === 0) {
+                        sqlResult.innerHTML = `<span class="success">Query executed. No results returned.</span>`;
+                        return;
+                    }
+
+                    let html = `<span class="success">Query returned ${results[0].values.length} row(s)</span>\n\n`;
+                    html += formatResultsAsTable(results[0]);
+                    sqlResult.innerHTML = html;
+                } catch (err) {
+                    sqlResult.innerHTML = `<span class="error">SQL Error: ${err.message}</span>`;
+                }
+            });
+
+            // Convert SOQL and run
+            runSoqlBtn.addEventListener("click", () => {
+                if (!db) return;
+
+                const soql = document.getElementById("sqlInput").value;
+
+                // Convert SOQL to SQL
+                const convResult = convertSoqlToSql(soql, schema, "sqlite");
+
+                if (!convResult.success) {
+                    sqlResult.innerHTML = `<span class="error">SOQL Conversion Error: ${convResult.error}</span>`;
+                    return;
+                }
+
+                try {
+                    const results = db.exec(convResult.sql);
+
+                    let html = `<span class="warning">SOQL:</span> ${soql}\n`;
+                    html += `<span class="warning">SQL:</span> ${convResult.sql}\n\n`;
+
+                    if (results.length === 0) {
+                        html += `<span class="success">Query executed. No results returned.</span>`;
+                    } else {
+                        html += `<span class="success">Query returned ${results[0].values.length} row(s)</span>\n\n`;
+                        html += formatResultsAsTable(results[0]);
+                    }
+
+                    sqlResult.innerHTML = html;
+                } catch (err) {
+                    sqlResult.innerHTML =
+                        `<span class="error">SOQL:</span> ${soql}\n` +
+                        `<span class="warning">SQL:</span> ${convResult.sql}\n\n` +
+                        `<span class="error">SQL Execution Error: ${err.message}</span>`;
+                }
+            });
+
+            // Format results as ASCII table
+            function formatResultsAsTable(result) {
+                const { columns, values } = result;
+
+                // Calculate column widths
+                const widths = columns.map((col, i) => {
+                    const maxVal = Math.max(
+                        ...values.map((row) => String(row[i] ?? "NULL").length),
+                    );
+                    return Math.max(col.length, maxVal, 4);
+                });
+
+                // Build table
+                let table = "";
+
+                // Header
+                table +=
+                    "| " +
+                    columns.map((col, i) => col.padEnd(widths[i])).join(" | ") +
+                    " |\n";
+                table +=
+                    "|-" +
+                    widths.map((w) => "-".repeat(w)).join("-|-") +
+                    "-|\n";
+
+                // Rows
+                for (const row of values) {
+                    table +=
+                        "| " +
+                        row
+                            .map((val, i) =>
+                                String(val ?? "NULL").padEnd(widths[i]),
+                            )
+                            .join(" | ") +
+                        " |\n";
+                }
+
+                return table;
+            }
+
+            // Initialize
+            async function initAll() {
+                await initialize();
+                initDbBtn.disabled = false;
+            }
+
+            initAll();
+        </script>
+    </body>
+</html>
