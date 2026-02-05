@@ -320,10 +320,19 @@ SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c FROM Property_
         <h2>4. Execute Apex Code</h2>
         <div class="panel">
             <p>
-                Transpile and run Apex code against SQLite. Enter a simple Apex
-                class with a static method:
+                Transpile and run Apex code against SQLite. Enter Apex classes
+                with static methods:
             </p>
-            <textarea id="execApexInput" style="min-height: 250px">
+            <div style="margin-bottom: 10px">
+                <strong>Examples:</strong>
+                <button class="example-btn" id="loadSimpleExample">
+                    Simple Search
+                </button>
+                <button class="example-btn" id="loadPagedExample">
+                    PropertyController + PagedResult
+                </button>
+            </div>
+            <textarea id="execApexInput" style="min-height: 300px">
 public class PropertySearch {
     public static List<Property__c> searchByCity(String city) {
         String pattern = '%' + city + '%';
@@ -1177,6 +1186,98 @@ public class PropertySearch {
                 div.textContent = text;
                 return div.innerHTML;
             }
+
+            // Load simple example
+            document
+                .getElementById("loadSimpleExample")
+                .addEventListener("click", () => {
+                    document.getElementById("execApexInput").value =
+                        `public class PropertySearch {
+    public static List<Property__c> searchByCity(String city) {
+        String pattern = '%' + city + '%';
+        return [
+            SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c
+            FROM Property__c
+            WHERE City__c LIKE :pattern
+            ORDER BY Price__c
+        ];
+    }
+
+    public static List<Property__c> getAffordableProperties(Decimal maxPrice) {
+        return [
+            SELECT Id, Name, City__c, Price__c
+            FROM Property__c
+            WHERE Price__c <= :maxPrice
+            ORDER BY Price__c
+        ];
+    }
+}`;
+                    document.getElementById("methodCall").value =
+                        "PropertySearch.searchByCity('Boston')";
+                });
+
+            // Load PropertyController + PagedResult example
+            document
+                .getElementById("loadPagedExample")
+                .addEventListener("click", () => {
+                    document.getElementById("execApexInput").value =
+                        `// PagedResult class - must be defined before PropertyController uses it
+public class PagedResult {
+    public Integer pageSize { get; set; }
+    public Integer pageNumber { get; set; }
+    public Integer totalItemCount { get; set; }
+    public List<Object> records { get; set; }
+}
+
+public class PropertyController {
+    private static final Decimal DEFAULT_MAX_PRICE = 9999999;
+    private static final Integer DEFAULT_PAGE_SIZE = 9;
+
+    public static PagedResult getPagedPropertyList(
+        String searchKey,
+        Decimal maxPrice,
+        Integer minBedrooms,
+        Integer minBathrooms,
+        Integer pageSize,
+        Integer pageNumber
+    ) {
+        Decimal safeMaxPrice = maxPrice ?? DEFAULT_MAX_PRICE;
+        Integer safeMinBedrooms = minBedrooms ?? 0;
+        Integer safeMinBathrooms = minBathrooms ?? 0;
+        Integer safePageSize = pageSize ?? DEFAULT_PAGE_SIZE;
+        Integer safePageNumber = pageNumber ?? 1;
+
+        String searchPattern = '%' + searchKey + '%';
+        Integer offset = (safePageNumber - 1) * safePageSize;
+
+        PagedResult result = new PagedResult();
+        result.pageSize = safePageSize;
+        result.pageNumber = safePageNumber;
+        result.totalItemCount = [
+            SELECT COUNT()
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+        ];
+        result.records = [
+            SELECT Id, Name, Address__c, City__c, State__c, Price__c, Beds__c, Baths__c
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+            ORDER BY Price__c
+            LIMIT :safePageSize
+            OFFSET :offset
+        ];
+        return result;
+    }
+}`;
+                    document.getElementById("methodCall").value =
+                        "PropertyController.getPagedPropertyList('Boston', 1000000, 2, 1, 5, 1)";
+                });
 
             initialize();
         </script>
