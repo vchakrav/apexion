@@ -1025,10 +1025,23 @@ public class PropertySearch {
 
                         const results = db.exec(sql);
                         if (results.length === 0) {
+                            // Check if this was a COUNT() query - return 0
+                            if (soql.toUpperCase().includes("SELECT COUNT()")) {
+                                return 0;
+                            }
                             return [];
                         }
 
                         const { columns, values } = results[0];
+
+                        // Handle COUNT() queries - return the count value directly
+                        if (
+                            columns.length === 1 &&
+                            columns[0].toLowerCase().includes("count")
+                        ) {
+                            return values[0][0];
+                        }
+
                         return values.map((row) => {
                             const obj = {};
                             columns.forEach((col, i) => {
