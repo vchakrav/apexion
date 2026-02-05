@@ -1300,8 +1300,17 @@ impl Transpiler {
     }
 
     fn collect_binds_from_query(&self, query: &SoqlQuery, binds: &mut Vec<String>) {
+        // Collect from WHERE clause
         if let Some(ref where_clause) = query.where_clause {
             self.collect_binds_from_expr(where_clause, binds);
+        }
+        // Collect from LIMIT clause
+        if let Some(ref limit_expr) = query.limit_clause {
+            self.collect_binds_from_expr(limit_expr, binds);
+        }
+        // Collect from OFFSET clause
+        if let Some(ref offset_expr) = query.offset_clause {
+            self.collect_binds_from_expr(offset_expr, binds);
         }
     }
 
