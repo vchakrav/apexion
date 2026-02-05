@@ -147,4 +147,4 @@ const ddl = generateDdl(schema, 'sqlite');
 
 ## License
 
-MIT
+Proprietary - All rights reserved.
