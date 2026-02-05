@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Dreamhouse - Apex on SQLite Demo</title>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/typescript/5.3.3/typescript.min.js"></script>
         <style>
             body {
                 font-family:
@@ -1088,9 +1089,9 @@ public class PropertySearch {
                     const methodCall =
                         document.getElementById("methodCall").value;
 
-                    // Step 1: Transpile
+                    // Step 1: Transpile Apex to TypeScript
                     const result = transpileApex(apex, {
-                        typescript: false,
+                        typescript: true,
                         asyncDatabase: true,
                         includeImports: false,
                     });
@@ -1104,21 +1105,39 @@ public class PropertySearch {
                     let html = `<span class="success">Transpilation successful!</span>\n\n`;
 
                     try {
-                        // Step 2: Create runtime and execute
+                        // Step 2: Clean up TypeScript and compile to JavaScript
+                        let cleanTs = result.typescript
+                            .replace(/^export /gm, "")
+                            .replace(/export default /g, "")
+                            .replace(/export \{[^}]*\};?\n?/g, "");
+
+                        // Use TypeScript compiler to convert to JavaScript
+                        const jsCode = ts.transpile(cleanTs, {
+                            target: ts.ScriptTarget.ES2020,
+                            module: ts.ModuleKind.None,
+                            experimentalDecorators: true,
+                        });
+
+                        console.log("[Dreamhouse] Compiled JS:", jsCode);
+
+                        // Step 3: Create runtime and execute
                         const $runtime = createRuntime();
 
-                        // Wrap the transpiled code to capture the class
+                        // Wrap the compiled JS code to execute the method call
                         const wrappedCode = `
-                        ${result.typescript}
+                        ${jsCode}
                         return ${methodCall};
                     `;
 
                         html += `<span class="warning">Executing:</span> ${methodCall}\n\n`;
 
                         // Create async function and execute
-                        const asyncFn = new Function(
+                        const AsyncFunction = Object.getPrototypeOf(
+                            async function () {},
+                        ).constructor;
+                        const asyncFn = new AsyncFunction(
                             "$runtime",
-                            `return (async () => { ${wrappedCode} })();`,
+                            wrappedCode,
                         );
                         const execResult = await asyncFn($runtime);
 
