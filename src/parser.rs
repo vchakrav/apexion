@@ -2689,11 +2689,132 @@ impl<'a> Parser<'a> {
                     expr =
                         Expression::PostDecrement(Box::new(expr), start.merge(self.current_span()));
                 }
+                TokenKind::Lt => {
+                    // This could be:
+                    // 1. Type<T>.class - type literal with generics
+                    // 2. expr < value - less-than comparison (handled elsewhere)
+                    //
+                    // We only handle case 1 here if:
+                    // - expr is an identifier that is a known generic type (List, Map, Set, etc.)
+                    // - followed by valid type arguments
+                    // - followed by >.class
+                    //
+                    // To avoid breaking normal comparisons like `x < 10`, we only attempt
+                    // type literal parsing for known collection types.
+                    if let Expression::Identifier(type_name, id_span) = &expr {
+                        // Only attempt type literal parsing for known generic types
+                        let is_known_generic_type = matches!(
+                            type_name.as_str(),
+                            "List" | "Set" | "Map" | "Iterable" | "Iterator" | "Type"
+                        );
+
+                        if is_known_generic_type {
+                            if let Some(type_literal) = self
+                                .try_parse_type_literal_with_generics(type_name.clone(), *id_span)?
+                            {
+                                expr = type_literal;
+                                continue;
+                            }
+                        }
+                    }
+                    // Not a type literal, break and let binary operator parsing handle <
+                    break;
+                }
                 _ => break,
             }
         }
 
         Ok(expr)
+    }
+
+    /// Try to parse Type<T>.class pattern or Type<T>.staticMethod() pattern
+    /// Returns Some(Expression) if successful, None if this isn't a generic type expression
+    fn try_parse_type_literal_with_generics(
+        &mut self,
+        type_name: String,
+        start: Span,
+    ) -> ParseResult<Option<Expression>> {
+        // We're at '<' token
+        // Parse type arguments: List<Account>, Map<String, Object>, etc.
+        self.advance(); // consume <
+
+        let type_arguments = match self.parse_type_arguments() {
+            Ok(args) => args,
+            Err(_) => {
+                // Failed to parse type arguments
+                // This shouldn't happen for known generic types, so it's an error
+                return Err(ParseError::InvalidExpression(start));
+            }
+        };
+
+        // Consume the closing '>'
+        self.consume_gt()?;
+
+        // After Type<Args>, we expect either:
+        // 1. .class - type literal
+        // 2. .methodName() - static method call (we'll convert to field access and let postfix handle it)
+        // 3. Nothing valid - error
+
+        if !self.check(&TokenKind::Dot) {
+            // No dot following - invalid in expression context
+            // (new Type<T>() is handled separately by parse_new_expression)
+            return Err(ParseError::InvalidExpression(start));
+        }
+
+        self.advance(); // consume .
+
+        if self.check(&TokenKind::Class) {
+            // Type<T>.class - type literal
+            self.advance(); // consume 'class'
+
+            let type_ref = TypeRef {
+                name: type_name,
+                type_arguments,
+                is_array: false,
+                span: start.merge(self.current_span()),
+            };
+
+            return Ok(Some(Expression::TypeLiteral(
+                type_ref,
+                start.merge(self.current_span()),
+            )));
+        }
+
+        // Type<T>.something - could be static method or field
+        // Create a TypeLiteral and wrap it in field access
+        // The postfix parsing will handle method calls
+        let member_name = self.parse_identifier()?;
+
+        let type_ref = TypeRef {
+            name: type_name,
+            type_arguments,
+            is_array: false,
+            span: start,
+        };
+
+        let type_expr = Expression::TypeLiteral(type_ref, start);
+
+        // Check if it's a method call
+        if self.check(&TokenKind::LParen) {
+            self.advance();
+            let arguments = self.parse_arguments()?;
+            self.consume(&TokenKind::RParen, ")")?;
+
+            return Ok(Some(Expression::MethodCall(Box::new(MethodCallExpr {
+                object: Some(type_expr),
+                name: member_name,
+                type_arguments: Vec::new(),
+                arguments,
+                span: start.merge(self.current_span()),
+            }))));
+        }
+
+        // Field access on generic type
+        Ok(Some(Expression::FieldAccess(Box::new(FieldAccessExpr {
+            object: type_expr,
+            field: member_name,
+            span: start.merge(self.current_span()),
+        }))))
     }
 
     fn parse_primary(&mut self) -> ParseResult<Expression> {
@@ -3379,7 +3500,18 @@ impl<'a> Parser<'a> {
         } else if self.match_token(&TokenKind::Like) {
             Some(BinaryOp::Like)
         } else if self.match_token(&TokenKind::In) {
-            // IN operator - parse list of values
+            // IN operator - parse list of values OR bind variable
+            // Apex supports both: IN ('a', 'b') and IN :collectionVariable
+            if self.check(&TokenKind::Colon) {
+                // Bind variable: IN :variableName
+                let right = self.parse_soql_expression()?;
+                return Ok(Expression::Binary(Box::new(BinaryExpr {
+                    left,
+                    operator: BinaryOp::In,
+                    right,
+                    span: start.merge(self.current_span()),
+                })));
+            }
             self.consume(&TokenKind::LParen, "(")?;
             let mut values = Vec::new();
             loop {
@@ -3409,6 +3541,18 @@ impl<'a> Parser<'a> {
         } else if self.match_token(&TokenKind::Not) {
             // NOT IN
             if self.match_token(&TokenKind::In) {
+                // NOT IN operator - parse list of values OR bind variable
+                // Apex supports both: NOT IN ('a', 'b') and NOT IN :collectionVariable
+                if self.check(&TokenKind::Colon) {
+                    // Bind variable: NOT IN :variableName
+                    let right = self.parse_soql_expression()?;
+                    return Ok(Expression::Binary(Box::new(BinaryExpr {
+                        left,
+                        operator: BinaryOp::NotIn,
+                        right,
+                        span: start.merge(self.current_span()),
+                    })));
+                }
                 self.consume(&TokenKind::LParen, "(")?;
                 let mut values = Vec::new();
                 loop {
@@ -3465,9 +3609,14 @@ impl<'a> Parser<'a> {
     fn parse_soql_expression(&mut self) -> ParseResult<Expression> {
         let start = self.current_span();
 
-        // Check for bind variable :varName
+        // Check for bind variable :varName or :varName.field
         if self.match_token(&TokenKind::Colon) {
-            let var_name = self.parse_identifier()?;
+            let mut var_name = self.parse_identifier()?;
+            // Allow dotted field access in bind variables: :record.Id, :account.Name
+            while self.match_token(&TokenKind::Dot) {
+                let field = self.parse_identifier()?;
+                var_name = format!("{}.{}", var_name, field);
+            }
             return Ok(Expression::BindVariable(
                 var_name,
                 start.merge(self.current_span()),

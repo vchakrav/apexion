@@ -516,6 +516,9 @@ pub enum Expression {
     ListLiteral(Vec<Expression>, Span),
     SetLiteral(Vec<Expression>, Span),
     MapLiteral(Vec<(Expression, Expression)>, Span),
+
+    // Type literal (e.g., List<Account>.class, String.class)
+    TypeLiteral(TypeRef, Span),
 }
 
 impl Expression {
@@ -555,6 +558,7 @@ impl Expression {
             Expression::ListLiteral(_, s) => *s,
             Expression::SetLiteral(_, s) => *s,
             Expression::MapLiteral(_, s) => *s,
+            Expression::TypeLiteral(_, s) => *s,
         }
     }
 }
@@ -620,8 +624,8 @@ pub struct UnaryExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
-    Negate,    // -
-    Not,       // !
+    Negate,     // -
+    Not,        // !
     BitwiseNot, // ~
 }
 
@@ -754,7 +758,11 @@ pub enum SelectField {
     Field(String),
     SubQuery(Box<SoqlQuery>),
     TypeOf(TypeOfClause),
-    AggregateFunction { name: String, field: String, alias: Option<String> },
+    AggregateFunction {
+        name: String,
+        field: String,
+        alias: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

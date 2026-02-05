@@ -814,6 +814,8 @@ fn extract_soql_from_expression(expr: &Expression, queries: &mut Vec<String>) {
         | Expression::PreDecrement(e, _) => {
             extract_soql_from_expression(e, queries);
         }
+        // Type literal (e.g., List<Account>.class)
+        Expression::TypeLiteral(_, _) => {}
         // Literals and simple expressions
         Expression::Null(_)
         | Expression::Boolean(_, _)

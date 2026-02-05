@@ -1127,6 +1127,15 @@ impl Transpiler {
                 }
                 self.write("])");
             }
+
+            Expression::TypeLiteral(type_ref, _) => {
+                // Type literals like List<Account>.class or String.class
+                // In JavaScript/TypeScript, we represent these as the constructor function
+                // or a string representation for reflection purposes
+                let type_name = self.type_ref_to_ts(type_ref);
+                // Output as a string for runtime type checking
+                self.write(&format!("\"{}\"", type_name));
+            }
         }
         Ok(())
     }

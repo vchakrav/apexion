@@ -1,0 +1,1165 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dreamhouse - Apex on SQLite Demo</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                background: #1a1a2e;
+                color: #eee;
+            }
+            h1 {
+                color: #00d9ff;
+            }
+            h2 {
+                color: #00ff88;
+                margin-top: 30px;
+            }
+            .panel {
+                background: #16213e;
+                border: 1px solid #0f3460;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 15px 0;
+            }
+            textarea {
+                width: 100%;
+                min-height: 150px;
+                background: #0f0f23;
+                color: #00ff88;
+                border: 1px solid #0f3460;
+                border-radius: 4px;
+                padding: 12px;
+                font-family: "Monaco", "Consolas", monospace;
+                font-size: 14px;
+                resize: vertical;
+                box-sizing: border-box;
+            }
+            button {
+                background: #e94560;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                margin: 5px 5px 5px 0;
+                transition: background 0.2s;
+            }
+            button:hover {
+                background: #ff6b6b;
+            }
+            button:disabled {
+                background: #333;
+                cursor: not-allowed;
+            }
+            button.secondary {
+                background: #0f3460;
+            }
+            button.secondary:hover {
+                background: #1a4a7a;
+            }
+            pre {
+                background: #0f0f23;
+                border: 1px solid #0f3460;
+                border-radius: 4px;
+                padding: 15px;
+                overflow-x: auto;
+                font-size: 13px;
+                white-space: pre-wrap;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+            .success {
+                color: #00ff88;
+            }
+            .error {
+                color: #ff6b6b;
+            }
+            .warning {
+                color: #ffd93d;
+            }
+            .sql {
+                color: #00d9ff;
+            }
+            .info {
+                color: #888;
+            }
+            #status {
+                padding: 12px;
+                border-radius: 4px;
+                margin: 15px 0;
+                font-weight: bold;
+            }
+            #status.loading {
+                background: #0f3460;
+            }
+            #status.ready {
+                background: #1e5128;
+            }
+            #status.error {
+                background: #5c1a1a;
+            }
+            .stats {
+                display: flex;
+                gap: 20px;
+                margin: 15px 0;
+            }
+            .stat-box {
+                background: #0f3460;
+                padding: 15px 25px;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .stat-box .number {
+                font-size: 32px;
+                font-weight: bold;
+                color: #00d9ff;
+            }
+            .stat-box .label {
+                color: #888;
+                font-size: 12px;
+                text-transform: uppercase;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            th,
+            td {
+                padding: 10px;
+                text-align: left;
+                border-bottom: 1px solid #0f3460;
+            }
+            th {
+                background: #0f3460;
+                color: #00d9ff;
+            }
+            tr:hover {
+                background: rgba(0, 217, 255, 0.1);
+            }
+            .example-btn {
+                background: #0f3460;
+                font-size: 12px;
+                padding: 8px 12px;
+                margin: 3px;
+            }
+            .example-btn:hover {
+                background: #1a4a7a;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Dreamhouse Demo</h1>
+        <p>
+            Run Salesforce Dreamhouse Apex code against SQLite in your browser
+        </p>
+
+        <div id="status" class="loading">Loading WASM module and SQLite...</div>
+
+        <div class="stats" id="stats" style="display: none">
+            <div class="stat-box">
+                <div class="number" id="brokerCount">0</div>
+                <div class="label">Brokers</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" id="propertyCount">0</div>
+                <div class="label">Properties</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" id="contactCount">0</div>
+                <div class="label">Contacts</div>
+            </div>
+        </div>
+
+        <h2>1. Parse Dreamhouse Apex</h2>
+        <div class="panel">
+            <textarea id="apexInput">
+public with sharing class PropertyController {
+    private static final Decimal DEFAULT_MAX_PRICE = 9999999;
+    private static final Integer DEFAULT_PAGE_SIZE = 9;
+
+    @AuraEnabled(cacheable=true scope='global')
+    public static PagedResult getPagedPropertyList(
+        String searchKey,
+        Decimal maxPrice,
+        Integer minBedrooms,
+        Integer minBathrooms,
+        Integer pageSize,
+        Integer pageNumber
+    ) {
+        Decimal safeMaxPrice = maxPrice ?? DEFAULT_MAX_PRICE;
+        Integer safeMinBedrooms = minBedrooms ?? 0;
+        Integer safeMinBathrooms = minBathrooms ?? 0;
+        Integer safePageSize = pageSize ?? DEFAULT_PAGE_SIZE;
+        Integer safePageNumber = pageNumber ?? 1;
+
+        String searchPattern = '%' + searchKey + '%';
+        Integer offset = (safePageNumber - 1) * safePageSize;
+
+        PagedResult result = new PagedResult();
+        result.totalItemCount = [
+            SELECT COUNT()
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+        ];
+        result.records = [
+            SELECT Id, Name, Address__c, City__c, State__c, Price__c, Beds__c, Baths__c, Thumbnail__c
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+            ORDER BY Price__c
+            LIMIT :safePageSize
+            OFFSET :offset
+        ];
+        return result;
+    }
+}</textarea
+            >
+            <br /><br />
+            <button id="parseBtn" disabled>Parse Apex</button>
+            <button id="loadSampleData" class="secondary" disabled>
+                Load SampleDataController
+            </button>
+            <pre id="parseResult">
+Click "Parse Apex" to analyze the code...</pre
+            >
+        </div>
+
+        <h2>2. Query Properties (SOQL)</h2>
+        <div class="panel">
+            <div style="margin-bottom: 10px">
+                <strong>Example Queries:</strong><br />
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, City__c, Price__c, Beds__c, Baths__c FROM Property__c ORDER BY Price__c"
+                >
+                    All Properties
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, Price__c FROM Property__c WHERE Price__c <= 600000 ORDER BY Price__c"
+                >
+                    Under $600K
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, City__c, Price__c FROM Property__c WHERE City__c LIKE '%Boston%'"
+                >
+                    Boston Properties
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, Beds__c, Baths__c FROM Property__c WHERE Beds__c >= 4 AND Baths__c >= 3"
+                >
+                    4+ Beds, 3+ Baths
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, Tags__c FROM Property__c WHERE Tags__c LIKE '%victorian%'"
+                >
+                    Victorian Style
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT COUNT() FROM Property__c WHERE Price__c <= 1000000"
+                >
+                    Count Under $1M
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT City__c, COUNT(Id) FROM Property__c GROUP BY City__c"
+                >
+                    Count by City
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, Price__c FROM Property__c ORDER BY Price__c LIMIT 3 OFFSET 0"
+                >
+                    Page 1 (3 items)
+                </button>
+                <button
+                    class="example-btn"
+                    data-soql="SELECT Id, Name, Price__c FROM Property__c ORDER BY Price__c LIMIT 3 OFFSET 3"
+                >
+                    Page 2 (3 items)
+                </button>
+            </div>
+            <textarea id="soqlInput">
+SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c FROM Property__c WHERE Price__c <= 1000000 ORDER BY Price__c</textarea
+            >
+            <br /><br />
+            <button id="runSoqlBtn" disabled>Run SOQL Query</button>
+            <button id="showSqlBtn" class="secondary" disabled>
+                Show Generated SQL
+            </button>
+            <pre id="queryResult">Initialize database first...</pre>
+        </div>
+
+        <h2>3. Browse Brokers</h2>
+        <div class="panel">
+            <button id="listBrokersBtn" disabled>List All Brokers</button>
+            <pre id="brokerResult">Initialize database first...</pre>
+        </div>
+
+        <h2>4. Execute Apex Code</h2>
+        <div class="panel">
+            <p>
+                Transpile and run Apex code against SQLite. Enter a simple Apex
+                class with a static method:
+            </p>
+            <textarea id="execApexInput" style="min-height: 250px">
+public class PropertySearch {
+    public static List<Property__c> searchByCity(String city) {
+        String pattern = '%' + city + '%';
+        return [
+            SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c
+            FROM Property__c
+            WHERE City__c LIKE :pattern
+            ORDER BY Price__c
+        ];
+    }
+
+    public static List<Property__c> getAffordableProperties(Decimal maxPrice) {
+        return [
+            SELECT Id, Name, City__c, Price__c
+            FROM Property__c
+            WHERE Price__c <= :maxPrice
+            ORDER BY Price__c
+        ];
+    }
+}</textarea
+            >
+            <br /><br />
+            <div style="margin-bottom: 10px">
+                <strong>Method to call:</strong>
+                <input
+                    type="text"
+                    id="methodCall"
+                    value="PropertySearch.searchByCity('Boston')"
+                    style="
+                        width: 400px;
+                        padding: 8px;
+                        background: #0f0f23;
+                        color: #00ff88;
+                        border: 1px solid #0f3460;
+                        border-radius: 4px;
+                    "
+                />
+            </div>
+            <button id="transpileBtn" disabled>Transpile Apex</button>
+            <button id="execApexBtn" disabled>Transpile & Execute</button>
+            <pre id="execResult">Initialize database first...</pre>
+        </div>
+
+        <script type="module">
+            import init, {
+                parseApex,
+                convertSoqlToSql,
+                transpileApex,
+                WasmSchema,
+            } from "./pkg/apexrust.js";
+
+            const status = document.getElementById("status");
+            let db = null;
+            let schema = null;
+
+            // Sample data
+            const BROKERS = [
+                {
+                    id: "broker-001",
+                    name: "Caroline Kingsley",
+                    title: "Senior Broker",
+                    phone: "617-244-3672",
+                    email: "caroline@dreamhouse.demo",
+                },
+                {
+                    id: "broker-002",
+                    name: "Michael Jones",
+                    title: "Senior Broker",
+                    phone: "617-244-3672",
+                    email: "michael@dreamhouse.demo",
+                },
+                {
+                    id: "broker-003",
+                    name: "Jonathan Bradley",
+                    title: "Senior Broker",
+                    phone: "617-244-3672",
+                    email: "jonathan@dreamhouse.demo",
+                },
+                {
+                    id: "broker-004",
+                    name: "Jennifer Wu",
+                    title: "Senior Broker",
+                    phone: "617-244-3672",
+                    email: "jen@dreamhouse.demo",
+                },
+            ];
+
+            const PROPERTIES = [
+                {
+                    id: "prop-001",
+                    name: "Stunning Victorian",
+                    address: "18 Henry St",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 975000,
+                    beds: 4,
+                    baths: 3,
+                    tags: "victorian",
+                    broker_id: "broker-001",
+                    status: "Available",
+                },
+                {
+                    id: "prop-002",
+                    name: "Ultimate Sophistication",
+                    address: "24 Pearl St",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 1200000,
+                    beds: 5,
+                    baths: 4,
+                    tags: "colonial",
+                    broker_id: "broker-002",
+                    status: "Contracted",
+                },
+                {
+                    id: "prop-003",
+                    name: "Modern City Living",
+                    address: "72 Francis St",
+                    city: "Boston",
+                    state: "MA",
+                    price: 825000,
+                    beds: 5,
+                    baths: 4,
+                    tags: "contemporary",
+                    broker_id: "broker-003",
+                    status: "Pre Market",
+                },
+                {
+                    id: "prop-004",
+                    name: "Stunning Colonial",
+                    address: "32 Prince St",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 930000,
+                    beds: 5,
+                    baths: 4,
+                    tags: "colonial",
+                    broker_id: "broker-004",
+                    status: "Available",
+                },
+                {
+                    id: "prop-005",
+                    name: "Waterfront in City",
+                    address: "110 Baxter St",
+                    city: "Boston",
+                    state: "MA",
+                    price: 450000,
+                    beds: 3,
+                    baths: 2,
+                    tags: "contemporary",
+                    broker_id: "broker-001",
+                    status: "Available",
+                },
+                {
+                    id: "prop-006",
+                    name: "Lakefront Bliss",
+                    address: "18 Newel St",
+                    city: "Boston",
+                    state: "MA",
+                    price: 550000,
+                    beds: 4,
+                    baths: 3,
+                    tags: "colonial",
+                    broker_id: "broker-002",
+                    status: "Available",
+                },
+                {
+                    id: "prop-007",
+                    name: "Mediterranean Haven",
+                    address: "8 Orton Ave",
+                    city: "Boston",
+                    state: "MA",
+                    price: 925000,
+                    beds: 4,
+                    baths: 3,
+                    tags: "victorian",
+                    broker_id: "broker-003",
+                    status: "Available",
+                },
+                {
+                    id: "prop-008",
+                    name: "Urban Elegance",
+                    address: "121 Harley St",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 1100000,
+                    beds: 4,
+                    baths: 3,
+                    tags: "contemporary",
+                    broker_id: "broker-004",
+                    status: "Available",
+                },
+                {
+                    id: "prop-009",
+                    name: "Cozy Cottage",
+                    address: "55 Maple Ave",
+                    city: "Boston",
+                    state: "MA",
+                    price: 380000,
+                    beds: 2,
+                    baths: 1,
+                    tags: "cottage",
+                    broker_id: "broker-001",
+                    status: "Available",
+                },
+                {
+                    id: "prop-010",
+                    name: "Executive Estate",
+                    address: "200 Park Lane",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 1500000,
+                    beds: 6,
+                    baths: 5,
+                    tags: "colonial",
+                    broker_id: "broker-002",
+                    status: "Available",
+                },
+                {
+                    id: "prop-011",
+                    name: "Downtown Loft",
+                    address: "88 Main St",
+                    city: "Boston",
+                    state: "MA",
+                    price: 520000,
+                    beds: 2,
+                    baths: 2,
+                    tags: "contemporary",
+                    broker_id: "broker-003",
+                    status: "Available",
+                },
+                {
+                    id: "prop-012",
+                    name: "Family Home",
+                    address: "42 Oak Street",
+                    city: "Cambridge",
+                    state: "MA",
+                    price: 680000,
+                    beds: 4,
+                    baths: 2,
+                    tags: "colonial",
+                    broker_id: "broker-004",
+                    status: "Available",
+                },
+            ];
+
+            const CONTACTS = [
+                {
+                    id: "contact-001",
+                    firstname: "Brad",
+                    lastname: "Holmes",
+                    phone: "555-1234",
+                    email: "brad@example.com",
+                },
+                {
+                    id: "contact-002",
+                    firstname: "Leslie",
+                    lastname: "Martin",
+                    phone: "555-5678",
+                    email: "leslie@example.com",
+                },
+                {
+                    id: "contact-003",
+                    firstname: "Anna",
+                    lastname: "Jones",
+                    phone: "555-9012",
+                    email: "anna@example.com",
+                },
+            ];
+
+            async function initialize() {
+                try {
+                    // Load WASM
+                    await init();
+
+                    // Create Dreamhouse schema
+                    schema = new WasmSchema();
+
+                    // Add Broker__c
+                    schema.addObject({
+                        name: "Broker__c",
+                        fields: [
+                            { name: "Id", type: "Id" },
+                            { name: "Name", type: "String" },
+                            { name: "Title__c", type: "String" },
+                            { name: "Phone__c", type: "Phone" },
+                            { name: "Email__c", type: "Email" },
+                        ],
+                    });
+
+                    // Add Property__c
+                    schema.addObject({
+                        name: "Property__c",
+                        fields: [
+                            { name: "Id", type: "Id" },
+                            { name: "Name", type: "String" },
+                            { name: "Address__c", type: "String" },
+                            { name: "City__c", type: "String" },
+                            { name: "State__c", type: "String" },
+                            { name: "Price__c", type: "Currency" },
+                            { name: "Beds__c", type: "Integer" },
+                            { name: "Baths__c", type: "Integer" },
+                            { name: "Tags__c", type: "String" },
+                            { name: "Status__c", type: "Picklist" },
+                            { name: "Thumbnail__c", type: "Url" },
+                            {
+                                name: "Broker__c",
+                                type: "Lookup",
+                                referenceTo: "Broker__c",
+                            },
+                        ],
+                    });
+
+                    // Add Contact
+                    schema.addObject({
+                        name: "Contact",
+                        fields: [
+                            { name: "Id", type: "Id" },
+                            { name: "FirstName", type: "String" },
+                            { name: "LastName", type: "String" },
+                            { name: "Phone", type: "Phone" },
+                            { name: "Email", type: "Email" },
+                        ],
+                    });
+
+                    // Load SQLite
+                    const SQL = await initSqlJs({
+                        locateFile: (file) =>
+                            `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`,
+                    });
+
+                    db = new SQL.Database();
+
+                    // Create tables
+                    db.run(`CREATE TABLE broker__c (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    title__c TEXT,
+                    phone__c TEXT,
+                    email__c TEXT
+                )`);
+
+                    db.run(`CREATE TABLE property__c (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    address__c TEXT,
+                    city__c TEXT,
+                    state__c TEXT,
+                    price__c REAL,
+                    beds__c INTEGER,
+                    baths__c INTEGER,
+                    tags__c TEXT,
+                    status__c TEXT,
+                    thumbnail__c TEXT,
+                    broker__c TEXT
+                )`);
+
+                    db.run(`CREATE TABLE contact (
+                    id TEXT PRIMARY KEY,
+                    firstname TEXT,
+                    lastname TEXT,
+                    phone TEXT,
+                    email TEXT
+                )`);
+
+                    // Insert data
+                    for (const b of BROKERS) {
+                        db.run(`INSERT INTO broker__c VALUES (?, ?, ?, ?, ?)`, [
+                            b.id,
+                            b.name,
+                            b.title,
+                            b.phone,
+                            b.email,
+                        ]);
+                    }
+
+                    for (const p of PROPERTIES) {
+                        db.run(
+                            `INSERT INTO property__c VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            [
+                                p.id,
+                                p.name,
+                                p.address,
+                                p.city,
+                                p.state,
+                                p.price,
+                                p.beds,
+                                p.baths,
+                                p.tags,
+                                p.status,
+                                null,
+                                p.broker_id,
+                            ],
+                        );
+                    }
+
+                    for (const c of CONTACTS) {
+                        db.run(`INSERT INTO contact VALUES (?, ?, ?, ?, ?)`, [
+                            c.id,
+                            c.firstname,
+                            c.lastname,
+                            c.phone,
+                            c.email,
+                        ]);
+                    }
+
+                    // Update stats
+                    document.getElementById("brokerCount").textContent =
+                        BROKERS.length;
+                    document.getElementById("propertyCount").textContent =
+                        PROPERTIES.length;
+                    document.getElementById("contactCount").textContent =
+                        CONTACTS.length;
+                    document.getElementById("stats").style.display = "flex";
+
+                    // Enable buttons
+                    document.getElementById("parseBtn").disabled = false;
+                    document.getElementById("loadSampleData").disabled = false;
+                    document.getElementById("runSoqlBtn").disabled = false;
+                    document.getElementById("showSqlBtn").disabled = false;
+                    document.getElementById("listBrokersBtn").disabled = false;
+                    document.getElementById("transpileBtn").disabled = false;
+                    document.getElementById("execApexBtn").disabled = false;
+
+                    status.textContent =
+                        "Ready! WASM loaded, SQLite initialized with Dreamhouse data.";
+                    status.className = "ready";
+                } catch (err) {
+                    status.textContent = `Error: ${err.message}`;
+                    status.className = "error";
+                    console.error(err);
+                }
+            }
+
+            // Parse Apex
+            document
+                .getElementById("parseBtn")
+                .addEventListener("click", () => {
+                    const apex = document.getElementById("apexInput").value;
+                    const result = parseApex(apex);
+
+                    let html = "";
+                    if (result && result.success) {
+                        html = `<span class="success">Parse successful!</span>\n\n`;
+                        html += `<span class="warning">SOQL Queries Found: ${result.soqlQueries?.length || 0}</span>\n`;
+                        if (result.soqlQueries?.length) {
+                            result.soqlQueries.forEach((q, i) => {
+                                html += `\n<span class="info">[${i + 1}]</span> <span class="sql">${q.substring(0, 300)}${q.length > 300 ? "..." : ""}</span>\n`;
+                            });
+                        }
+                    } else {
+                        html = `<span class="error">Parse failed: ${result?.error || "Unknown error"}</span>`;
+                    }
+                    document.getElementById("parseResult").innerHTML = html;
+                });
+
+            // Load SampleDataController
+            document
+                .getElementById("loadSampleData")
+                .addEventListener("click", () => {
+                    document.getElementById("apexInput").value =
+                        `public with sharing class SampleDataController {
+    @AuraEnabled
+    public static void importSampleData() {
+        delete [SELECT Id FROM Property__c];
+        delete [SELECT Id FROM Broker__c];
+        delete [SELECT Id FROM Contact];
+
+        insertBrokers();
+        insertProperties();
+        insertContacts();
+    }
+
+    private static void insertBrokers() {
+        StaticResource brokersResource = [
+            SELECT Id, Body FROM StaticResource WHERE Name = 'sample_data_brokers'
+        ];
+        String brokersJSON = brokersResource.body.toString();
+        List<Broker__c> brokers = (List<Broker__c>) JSON.deserialize(
+            brokersJSON,
+            List<Broker__c>.class
+        );
+        insert brokers;
+    }
+
+    private static void insertProperties() {
+        StaticResource propertiesResource = [
+            SELECT Id, Body FROM StaticResource WHERE Name = 'sample_data_properties'
+        ];
+        String propertiesJSON = propertiesResource.body.toString();
+        List<Property__c> properties = (List<Property__c>) JSON.deserialize(
+            propertiesJSON,
+            List<Property__c>.class
+        );
+        insert properties;
+    }
+
+    private static void insertContacts() {
+        StaticResource contactsResource = [
+            SELECT Id, Body FROM StaticResource WHERE Name = 'sample_data_contacts'
+        ];
+        String contactsJSON = contactsResource.body.toString();
+        List<Contact> contacts = (List<Contact>) JSON.deserialize(
+            contactsJSON,
+            List<Contact>.class
+        );
+        insert contacts;
+    }
+}`;
+                });
+
+            // Example query buttons
+            document.querySelectorAll(".example-btn").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    document.getElementById("soqlInput").value =
+                        btn.dataset.soql;
+                });
+            });
+
+            // Run SOQL
+            document
+                .getElementById("runSoqlBtn")
+                .addEventListener("click", () => {
+                    const soql = document.getElementById("soqlInput").value;
+
+                    const convResult = convertSoqlToSql(soql, schema, "sqlite");
+
+                    if (!convResult.success) {
+                        document.getElementById("queryResult").innerHTML =
+                            `<span class="error">SOQL Conversion Error: ${convResult.error}</span>`;
+                        return;
+                    }
+
+                    try {
+                        const results = db.exec(convResult.sql);
+
+                        let html = `<span class="success">Query executed successfully</span>\n\n`;
+
+                        if (results.length === 0) {
+                            html += `<span class="info">No results returned</span>`;
+                        } else {
+                            const { columns, values } = results[0];
+                            html += `<span class="info">${values.length} row(s) returned</span>\n\n`;
+                            html += formatTable(columns, values);
+                        }
+
+                        document.getElementById("queryResult").innerHTML = html;
+                    } catch (err) {
+                        document.getElementById("queryResult").innerHTML =
+                            `<span class="error">SQL Error: ${err.message}</span>\n\n` +
+                            `<span class="info">Generated SQL:</span>\n<span class="sql">${convResult.sql}</span>`;
+                    }
+                });
+
+            // Show SQL
+            document
+                .getElementById("showSqlBtn")
+                .addEventListener("click", () => {
+                    const soql = document.getElementById("soqlInput").value;
+                    const convResult = convertSoqlToSql(soql, schema, "sqlite");
+
+                    let html = `<span class="warning">SOQL:</span>\n${soql}\n\n`;
+
+                    if (convResult.success) {
+                        html += `<span class="warning">Generated SQL:</span>\n<span class="sql">${convResult.sql}</span>`;
+
+                        if (convResult.parameters?.length) {
+                            html += `\n\n<span class="warning">Bind Parameters:</span>\n`;
+                            convResult.parameters.forEach((p) => {
+                                html += `  ${p.placeholder} <- :${p.originalName}\n`;
+                            });
+                        }
+                    } else {
+                        html += `<span class="error">Conversion Error: ${convResult.error}</span>`;
+                    }
+
+                    document.getElementById("queryResult").innerHTML = html;
+                });
+
+            // List Brokers
+            document
+                .getElementById("listBrokersBtn")
+                .addEventListener("click", () => {
+                    const soql =
+                        "SELECT Id, Name, Title__c, Phone__c, Email__c FROM Broker__c";
+                    const convResult = convertSoqlToSql(soql, schema, "sqlite");
+
+                    if (!convResult.success) {
+                        document.getElementById("brokerResult").innerHTML =
+                            `<span class="error">Error: ${convResult.error}</span>`;
+                        return;
+                    }
+
+                    const results = db.exec(convResult.sql);
+
+                    if (results.length === 0) {
+                        document.getElementById("brokerResult").innerHTML =
+                            '<span class="info">No brokers found</span>';
+                        return;
+                    }
+
+                    const { columns, values } = results[0];
+                    document.getElementById("brokerResult").innerHTML =
+                        formatTable(columns, values);
+                });
+
+            function formatTable(columns, values) {
+                // Calculate column widths
+                const widths = columns.map((col, i) => {
+                    const maxVal = Math.max(
+                        ...values.map((row) => String(row[i] ?? "NULL").length),
+                    );
+                    return Math.max(col.length, maxVal, 4);
+                });
+
+                let table = "";
+
+                // Header
+                table +=
+                    "| " +
+                    columns.map((col, i) => col.padEnd(widths[i])).join(" | ") +
+                    " |\n";
+                table +=
+                    "|-" +
+                    widths.map((w) => "-".repeat(w)).join("-|-") +
+                    "-|\n";
+
+                // Rows
+                for (const row of values) {
+                    table +=
+                        "| " +
+                        row
+                            .map((val, i) => {
+                                let str = String(val ?? "NULL");
+                                // Format currency
+                                if (
+                                    columns[i]
+                                        .toLowerCase()
+                                        .includes("price") &&
+                                    typeof val === "number"
+                                ) {
+                                    str = "$" + val.toLocaleString();
+                                }
+                                return str.padEnd(widths[i]);
+                            })
+                            .join(" | ") +
+                        " |\n";
+                }
+
+                return table;
+            }
+
+            // Create the $runtime object that transpiled Apex code uses
+            function createRuntime() {
+                return {
+                    async query(soql, binds) {
+                        // Convert SOQL to SQL
+                        const convResult = convertSoqlToSql(
+                            soql,
+                            schema,
+                            "sqlite",
+                        );
+                        if (!convResult.success) {
+                            throw new Error(`SOQL Error: ${convResult.error}`);
+                        }
+
+                        let sql = convResult.sql;
+
+                        // Handle bind variables - replace ?1, ?2 etc with actual values
+                        if (binds && convResult.parameters) {
+                            for (const param of convResult.parameters) {
+                                const value = binds[param.originalName];
+                                let sqlValue;
+                                if (value === null || value === undefined) {
+                                    sqlValue = "NULL";
+                                } else if (typeof value === "string") {
+                                    sqlValue = `'${value.replace(/'/g, "''")}'`;
+                                } else if (typeof value === "number") {
+                                    sqlValue = String(value);
+                                } else if (typeof value === "boolean") {
+                                    sqlValue = value ? "1" : "0";
+                                } else {
+                                    sqlValue = `'${String(value)}'`;
+                                }
+                                sql = sql.replace(param.placeholder, sqlValue);
+                            }
+                        }
+
+                        console.log("[Runtime] Executing SQL:", sql);
+
+                        const results = db.exec(sql);
+                        if (results.length === 0) {
+                            return [];
+                        }
+
+                        const { columns, values } = results[0];
+                        return values.map((row) => {
+                            const obj = {};
+                            columns.forEach((col, i) => {
+                                // Convert column name to field name (e.g., price__c -> Price__c)
+                                const fieldName = col
+                                    .replace(/__c$/i, "__c")
+                                    .replace(/^(\w)/, (m) => m.toUpperCase())
+                                    .replace(
+                                        /_(\w)/g,
+                                        (m, c) => "_" + c.toUpperCase(),
+                                    );
+                                obj[fieldName] = row[i];
+                            });
+                            return obj;
+                        });
+                    },
+
+                    async insert(records) {
+                        console.log("[Runtime] Insert:", records);
+                        return records.map(
+                            () =>
+                                "new-id-" +
+                                Math.random().toString(36).substr(2, 9),
+                        );
+                    },
+
+                    async update(records) {
+                        console.log("[Runtime] Update:", records);
+                    },
+
+                    async delete(records) {
+                        console.log("[Runtime] Delete:", records);
+                    },
+
+                    debug(msg) {
+                        console.log("[Apex Debug]", msg);
+                    },
+                };
+            }
+
+            // Transpile button - just show the transpiled code
+            document
+                .getElementById("transpileBtn")
+                .addEventListener("click", () => {
+                    const apex = document.getElementById("execApexInput").value;
+                    const result = transpileApex(apex, {
+                        typescript: false,
+                        asyncDatabase: true,
+                    });
+
+                    let html = "";
+                    if (result && result.success) {
+                        html = `<span class="success">Transpilation successful!</span>\n\n`;
+                        html += `<span class="warning">Generated JavaScript:</span>\n`;
+                        html += `<span class="sql">${escapeHtml(result.typescript)}</span>`;
+                    } else {
+                        html = `<span class="error">Transpilation failed: ${result?.error || "Unknown error"}</span>`;
+                    }
+                    document.getElementById("execResult").innerHTML = html;
+                });
+
+            // Execute button - transpile and run
+            document
+                .getElementById("execApexBtn")
+                .addEventListener("click", async () => {
+                    const apex = document.getElementById("execApexInput").value;
+                    const methodCall =
+                        document.getElementById("methodCall").value;
+
+                    // Step 1: Transpile
+                    const result = transpileApex(apex, {
+                        typescript: false,
+                        asyncDatabase: true,
+                        includeImports: false,
+                    });
+
+                    if (!result || !result.success) {
+                        document.getElementById("execResult").innerHTML =
+                            `<span class="error">Transpilation failed: ${result?.error || "Unknown error"}</span>`;
+                        return;
+                    }
+
+                    let html = `<span class="success">Transpilation successful!</span>\n\n`;
+
+                    try {
+                        // Step 2: Create runtime and execute
+                        const $runtime = createRuntime();
+
+                        // Wrap the transpiled code to capture the class
+                        const wrappedCode = `
+                        ${result.typescript}
+                        return ${methodCall};
+                    `;
+
+                        html += `<span class="warning">Executing:</span> ${methodCall}\n\n`;
+
+                        // Create async function and execute
+                        const asyncFn = new Function(
+                            "$runtime",
+                            `return (async () => { ${wrappedCode} })();`,
+                        );
+                        const execResult = await asyncFn($runtime);
+
+                        html += `<span class="success">Execution successful!</span>\n\n`;
+
+                        // Format result
+                        if (
+                            Array.isArray(execResult) &&
+                            execResult.length > 0
+                        ) {
+                            const columns = Object.keys(execResult[0]);
+                            const values = execResult.map((row) =>
+                                columns.map((col) => row[col]),
+                            );
+                            html += `<span class="info">${execResult.length} record(s) returned:</span>\n\n`;
+                            html += formatTable(columns, values);
+                        } else if (
+                            execResult === null ||
+                            execResult === undefined
+                        ) {
+                            html += `<span class="info">Result: null</span>`;
+                        } else if (typeof execResult === "object") {
+                            html += `<span class="info">Result:</span>\n${JSON.stringify(execResult, null, 2)}`;
+                        } else {
+                            html += `<span class="info">Result:</span> ${execResult}`;
+                        }
+                    } catch (err) {
+                        html += `<span class="error">Execution error: ${err.message}</span>\n\n`;
+                        html += `<span class="info">Stack:</span>\n${err.stack}`;
+                    }
+
+                    document.getElementById("execResult").innerHTML = html;
+                });
+
+            function escapeHtml(text) {
+                const div = document.createElement("div");
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            initialize();
+        </script>
+    </body>
+</html>

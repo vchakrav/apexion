@@ -14,7 +14,7 @@ export namespace System {
    * Debug logging - outputs to console
    */
   export function debug(message: any): void {
-    console.log('[DEBUG]', message);
+    console.log("[DEBUG]", message);
   }
 
   export function debug(level: LoggingLevel, message: any): void {
@@ -36,22 +36,30 @@ export namespace System {
    */
   export function assert(condition: boolean, message?: string): void {
     if (!condition) {
-      throw new AssertException(message || 'Assertion failed');
+      throw new AssertException(message || "Assertion failed");
     }
   }
 
-  export function assertEquals(expected: any, actual: any, message?: string): void {
+  export function assertEquals(
+    expected: any,
+    actual: any,
+    message?: string,
+  ): void {
     if (expected !== actual) {
       throw new AssertException(
-        message || `Expected: ${expected}, Actual: ${actual}`
+        message || `Expected: ${expected}, Actual: ${actual}`,
       );
     }
   }
 
-  export function assertNotEquals(expected: any, actual: any, message?: string): void {
+  export function assertNotEquals(
+    expected: any,
+    actual: any,
+    message?: string,
+  ): void {
     if (expected === actual) {
       throw new AssertException(
-        message || `Expected values to be different but both were: ${expected}`
+        message || `Expected values to be different but both were: ${expected}`,
       );
     }
   }
@@ -94,7 +102,7 @@ export enum LoggingLevel {
 export class AssertException extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'AssertException';
+    this.name = "AssertException";
   }
 }
 
@@ -109,7 +117,7 @@ export class AssertException extends Error {
 export class ApexString {
   private value: string;
 
-  constructor(value: string = '') {
+  constructor(value: string = "") {
     this.value = value;
   }
 
@@ -131,7 +139,7 @@ export class ApexString {
   }
 
   static valueOf(obj: any): string {
-    if (obj == null) return 'null';
+    if (obj == null) return "null";
     return String(obj);
   }
 
@@ -153,15 +161,15 @@ export class ApexString {
   // Instance methods (called on string values)
   abbreviate(maxWidth: number): string {
     if (this.value.length <= maxWidth) return this.value;
-    return this.value.substring(0, maxWidth - 3) + '...';
+    return this.value.substring(0, maxWidth - 3) + "...";
   }
 
   capitalize(): string {
-    if (this.value.length === 0) return '';
+    if (this.value.length === 0) return "";
     return this.value.charAt(0).toUpperCase() + this.value.slice(1);
   }
 
-  center(size: number, padStr: string = ' '): string {
+  center(size: number, padStr: string = " "): string {
     if (this.value.length >= size) return this.value;
     const padding = size - this.value.length;
     const left = Math.floor(padding / 2);
@@ -178,8 +186,8 @@ export class ApexString {
   }
 
   containsOnly(chars: string): boolean {
-    const charSet = new Set(chars.split(''));
-    return this.value.split('').every(c => charSet.has(c));
+    const charSet = new Set(chars.split(""));
+    return this.value.split("").every((c) => charSet.has(c));
   }
 
   containsWhitespace(): boolean {
@@ -198,7 +206,7 @@ export class ApexString {
   }
 
   deleteWhitespace(): string {
-    return this.value.replace(/\s/g, '');
+    return this.value.replace(/\s/g, "");
   }
 
   endsWith(suffix: string): boolean {
@@ -222,7 +230,9 @@ export class ApexString {
   }
 
   indexOfIgnoreCase(substring: string, startIndex: number = 0): number {
-    return this.value.toLowerCase().indexOf(substring.toLowerCase(), startIndex);
+    return this.value
+      .toLowerCase()
+      .indexOf(substring.toLowerCase(), startIndex);
   }
 
   isAllLowerCase(): boolean {
@@ -253,7 +263,7 @@ export class ApexString {
     return this.value.substring(0, len);
   }
 
-  leftPad(len: number, padStr: string = ' '): string {
+  leftPad(len: number, padStr: string = " "): string {
     if (this.value.length >= len) return this.value;
     return padStr.repeat(len - this.value.length) + this.value;
   }
@@ -267,11 +277,11 @@ export class ApexString {
   }
 
   normalizeSpace(): string {
-    return this.value.trim().replace(/\s+/g, ' ');
+    return this.value.trim().replace(/\s+/g, " ");
   }
 
   remove(substring: string): string {
-    return this.value.split(substring).join('');
+    return this.value.split(substring).join("");
   }
 
   removeEnd(suffix: string): string {
@@ -304,7 +314,7 @@ export class ApexString {
   }
 
   replaceAll(regex: string, replacement: string): string {
-    return this.value.replace(new RegExp(regex, 'g'), replacement);
+    return this.value.replace(new RegExp(regex, "g"), replacement);
   }
 
   replaceFirst(regex: string, replacement: string): string {
@@ -312,14 +322,14 @@ export class ApexString {
   }
 
   reverse(): string {
-    return this.value.split('').reverse().join('');
+    return this.value.split("").reverse().join("");
   }
 
   right(len: number): string {
     return this.value.slice(-len);
   }
 
-  rightPad(len: number, padStr: string = ' '): string {
+  rightPad(len: number, padStr: string = " "): string {
     if (this.value.length >= len) return this.value;
     return this.value + padStr.repeat(len - this.value.length);
   }
@@ -330,19 +340,19 @@ export class ApexString {
 
   splitByCharacterType(): string[] {
     const result: string[] = [];
-    let current = '';
-    let lastType: 'upper' | 'lower' | 'digit' | 'other' | null = null;
+    let current = "";
+    let lastType: "upper" | "lower" | "digit" | "other" | null = null;
 
     for (const char of this.value) {
-      let type: 'upper' | 'lower' | 'digit' | 'other';
-      if (/[A-Z]/.test(char)) type = 'upper';
-      else if (/[a-z]/.test(char)) type = 'lower';
-      else if (/[0-9]/.test(char)) type = 'digit';
-      else type = 'other';
+      let type: "upper" | "lower" | "digit" | "other";
+      if (/[A-Z]/.test(char)) type = "upper";
+      else if (/[a-z]/.test(char)) type = "lower";
+      else if (/[0-9]/.test(char)) type = "digit";
+      else type = "other";
 
       if (lastType !== null && type !== lastType) {
         result.push(current);
-        current = '';
+        current = "";
       }
       current += char;
       lastType = type;
@@ -366,12 +376,12 @@ export class ApexString {
 
   substringAfter(separator: string): string {
     const index = this.value.indexOf(separator);
-    return index === -1 ? '' : this.value.slice(index + separator.length);
+    return index === -1 ? "" : this.value.slice(index + separator.length);
   }
 
   substringAfterLast(separator: string): string {
     const index = this.value.lastIndexOf(separator);
-    return index === -1 ? '' : this.value.slice(index + separator.length);
+    return index === -1 ? "" : this.value.slice(index + separator.length);
   }
 
   substringBefore(separator: string): string {
@@ -405,7 +415,7 @@ export class ApexString {
   }
 
   uncapitalize(): string {
-    if (this.value.length === 0) return '';
+    if (this.value.length === 0) return "";
     return this.value.charAt(0).toLowerCase() + this.value.slice(1);
   }
 
@@ -435,7 +445,7 @@ export class ApexList<T> extends Array<T> {
   add(item: T): void;
   add(index: number, item: T): void;
   add(indexOrItem: number | T, item?: T): void {
-    if (typeof indexOrItem === 'number' && item !== undefined) {
+    if (typeof indexOrItem === "number" && item !== undefined) {
       this.splice(indexOrItem, 0, item);
     } else {
       this.push(indexOrItem as T);
@@ -502,7 +512,7 @@ export class ApexList<T> extends Array<T> {
 export class ListException extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'ListException';
+    this.name = "ListException";
   }
 }
 
@@ -662,7 +672,7 @@ export class ApexDate {
   }
 
   format(): string {
-    return this.date.toISOString().split('T')[0];
+    return this.date.toISOString().split("T")[0];
   }
 
   isSameDay(other: ApexDate): boolean {
@@ -709,8 +719,17 @@ export class ApexDateTime {
     this.date = date || new Date();
   }
 
-  static newInstance(year: number, month: number, day: number, hour: number = 0, minute: number = 0, second: number = 0): ApexDateTime {
-    return new ApexDateTime(new Date(year, month - 1, day, hour, minute, second));
+  static newInstance(
+    year: number,
+    month: number,
+    day: number,
+    hour: number = 0,
+    minute: number = 0,
+    second: number = 0,
+  ): ApexDateTime {
+    return new ApexDateTime(
+      new Date(year, month - 1, day, hour, minute, second),
+    );
   }
 
   static now(): ApexDateTime {
@@ -812,6 +831,21 @@ export class ApexDateTime {
 
   toString(): string {
     return this.format();
+  }
+}
+
+// ============================================================================
+// Math Utilities
+// ============================================================================
+
+// ============================================================================
+// Integer Utilities
+// ============================================================================
+
+export namespace ApexInteger {
+  export function valueOf(str: string | number): number {
+    if (typeof str === "number") return Math.floor(str);
+    return parseInt(str, 10);
   }
 }
 
@@ -967,6 +1001,7 @@ export {
   ApexMap as Apex_Map,
   ApexDate as Apex_Date,
   ApexDateTime as Apex_DateTime,
+  ApexInteger as Apex_Integer,
   ApexMath as Apex_Math,
   ApexJSON as Apex_JSON,
 };
