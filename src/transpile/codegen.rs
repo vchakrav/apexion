@@ -19,6 +19,10 @@ pub struct Transpiler {
     indent_level: usize,
     /// Track if current method needs to be async (contains SOQL/DML)
     needs_async: bool,
+    /// Current class name for static field resolution
+    current_class: Option<String>,
+    /// Static fields in current class
+    static_fields: std::collections::HashSet<String>,
 }
 
 impl Transpiler {
@@ -32,6 +36,8 @@ impl Transpiler {
             output: String::new(),
             indent_level: 0,
             needs_async: false,
+            current_class: None,
+            static_fields: std::collections::HashSet::new(),
         }
     }
 
@@ -112,10 +118,31 @@ impl Transpiler {
         self.writeln(" {");
         self.indent();
 
+        // Track current class and collect static fields
+        let old_class = self.current_class.take();
+        let old_static_fields = std::mem::take(&mut self.static_fields);
+
+        self.current_class = Some(class.name.clone());
+
+        // First pass: collect static field names
+        for member in &class.members {
+            if let ClassMember::Field(field) = member {
+                if field.modifiers.is_static {
+                    for declarator in &field.declarators {
+                        self.static_fields.insert(declarator.name.clone());
+                    }
+                }
+            }
+        }
+
         // Transpile members
         for member in &class.members {
             self.transpile_class_member(member)?;
         }
+
+        // Restore previous context
+        self.current_class = old_class;
+        self.static_fields = old_static_fields;
 
         self.dedent();
         self.writeln("}");
@@ -918,7 +945,18 @@ impl Transpiler {
             Expression::Double(n, _) => self.write(&n.to_string()),
             Expression::String(s, _) => self.write(&format!("\"{}\"", s.replace('\"', "\\\""))),
 
-            Expression::Identifier(name, _) => self.write(name),
+            Expression::Identifier(name, _) => {
+                // Check if this is a static field reference that needs class prefix
+                if self.static_fields.contains(name) {
+                    if let Some(ref class_name) = self.current_class {
+                        self.write(&format!("{}.{}", class_name, name));
+                    } else {
+                        self.write(name);
+                    }
+                } else {
+                    self.write(name);
+                }
+            }
             Expression::This(_) => self.write("this"),
             Expression::Super(_) => self.write("super"),
 
