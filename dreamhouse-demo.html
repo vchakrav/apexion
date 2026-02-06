@@ -1129,6 +1129,23 @@ public class PropertySearch {
             const nativeJSONParse = JSON.parse.bind(JSON);
             const nativeJSONStringify = JSON.stringify.bind(JSON);
 
+            // Convert plain objects to Maps recursively (for Apex compatibility)
+            // In Apex, JSON.deserializeUntyped returns Map<String, Object> for objects
+            function toApexObject(val) {
+                if (val === null || val === undefined) return val;
+                if (Array.isArray(val)) {
+                    return val.map(toApexObject);
+                }
+                if (typeof val === "object") {
+                    const map = new Map();
+                    for (const [k, v] of Object.entries(val)) {
+                        map.set(k, toApexObject(v));
+                    }
+                    return map;
+                }
+                return val;
+            }
+
             // Add Apex-style methods
             JSON.serialize = function (obj) {
                 return nativeJSONStringify(obj);
@@ -1137,7 +1154,8 @@ public class PropertySearch {
                 return nativeJSONParse(jsonString);
             };
             JSON.deserializeUntyped = function (jsonString) {
-                return nativeJSONParse(jsonString);
+                // Return Maps for objects (Apex behavior)
+                return toApexObject(nativeJSONParse(jsonString));
             };
             JSON.serializePretty = function (obj) {
                 return nativeJSONStringify(obj, null, 2);
