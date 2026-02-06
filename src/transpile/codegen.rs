@@ -987,6 +987,17 @@ impl Transpiler {
                 let needs_await =
                     self.options.async_database && matches!(call.name.as_str(), "send");
 
+                // Map Apex method names to JavaScript equivalents
+                let js_method_name = match call.name.as_str() {
+                    "put" => "set",                                // Map.put() -> Map.set()
+                    "containsKey" => "has",                        // Map.containsKey() -> Map.has()
+                    "remove" if call.object.is_some() => "delete", // Map.remove() -> Map.delete()
+                    "add" if call.arguments.len() == 1 => "add",   // Set.add() stays add()
+                    "contains" => "has",                           // Set.contains() -> Set.has()
+                    "isEmpty" => "size === 0 ||", // Will be handled specially below
+                    _ => &call.name,
+                };
+
                 if needs_await {
                     self.write("await ");
                 }
@@ -999,8 +1010,11 @@ impl Transpiler {
                 if is_property {
                     // length() -> .length, size() -> .length (for strings/arrays)
                     self.write("length");
+                } else if call.name == "isEmpty" && call.arguments.is_empty() {
+                    // isEmpty() -> .size === 0 (for Map/Set) or .length === 0 (for Array)
+                    self.write("size === 0");
                 } else {
-                    self.write(&format!("{}(", call.name));
+                    self.write(&format!("{}(", js_method_name));
                     for (i, arg) in call.arguments.iter().enumerate() {
                         if i > 0 {
                             self.write(", ");
