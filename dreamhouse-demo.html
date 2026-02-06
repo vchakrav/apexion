@@ -1419,8 +1419,18 @@ public class PropertySearch {
                             execResult === undefined
                         ) {
                             html += `<span class="info">Result: null</span>`;
+                        } else if (execResult instanceof Map) {
+                            // Convert Map to plain object for display
+                            const mapToObj = (map) => {
+                                const obj = {};
+                                for (const [k, v] of map) {
+                                    obj[k] = v instanceof Map ? mapToObj(v) : v;
+                                }
+                                return obj;
+                            };
+                            html += `<span class="info">Result:</span>\n${nativeJSONStringify(mapToObj(execResult), null, 2)}`;
                         } else if (typeof execResult === "object") {
-                            html += `<span class="info">Result:</span>\n${JSON.stringify(execResult, null, 2)}`;
+                            html += `<span class="info">Result:</span>\n${nativeJSONStringify(execResult, null, 2)}`;
                         } else {
                             html += `<span class="info">Result:</span> ${execResult}`;
                         }
