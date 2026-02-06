@@ -1124,23 +1124,23 @@ public class PropertySearch {
                 },
             };
 
-            // JSON class for Apex - provides serialize/deserialize methods
-            window.JSON = {
-                // Original native JSON methods
-                ...window.JSON,
-                // Apex-style methods
-                serialize: function (obj) {
-                    return window.JSON.stringify(obj);
-                },
-                deserialize: function (jsonString, apexType) {
-                    return window.JSON.parse(jsonString);
-                },
-                deserializeUntyped: function (jsonString) {
-                    return window.JSON.parse(jsonString);
-                },
-                serializePretty: function (obj) {
-                    return window.JSON.stringify(obj, null, 2);
-                },
+            // JSON class for Apex - add Apex-style methods to native JSON
+            // Save references to native methods before adding new ones
+            const nativeJSONParse = JSON.parse.bind(JSON);
+            const nativeJSONStringify = JSON.stringify.bind(JSON);
+
+            // Add Apex-style methods
+            JSON.serialize = function (obj) {
+                return nativeJSONStringify(obj);
+            };
+            JSON.deserialize = function (jsonString, apexType) {
+                return nativeJSONParse(jsonString);
+            };
+            JSON.deserializeUntyped = function (jsonString) {
+                return nativeJSONParse(jsonString);
+            };
+            JSON.serializePretty = function (obj) {
+                return nativeJSONStringify(obj, null, 2);
             };
 
             // HTTP Callout classes for Apex
