@@ -978,18 +978,29 @@ impl Transpiler {
             }
 
             Expression::MethodCall(call) => {
+                // Handle Apex methods that map to JS properties
+                let is_property = call.object.is_some()
+                    && call.arguments.is_empty()
+                    && matches!(call.name.as_str(), "length" | "size");
+
                 if let Some(ref obj) = call.object {
                     self.transpile_expression(obj)?;
                     self.write(".");
                 }
-                self.write(&format!("{}(", call.name));
-                for (i, arg) in call.arguments.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
+
+                if is_property {
+                    // length() -> .length, size() -> .length (for strings/arrays)
+                    self.write("length");
+                } else {
+                    self.write(&format!("{}(", call.name));
+                    for (i, arg) in call.arguments.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        self.transpile_expression(arg)?;
                     }
-                    self.transpile_expression(arg)?;
+                    self.write(")");
                 }
-                self.write(")");
             }
 
             Expression::New(new_expr) => {
