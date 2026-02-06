@@ -983,6 +983,14 @@ impl Transpiler {
                     && call.arguments.is_empty()
                     && matches!(call.name.as_str(), "length" | "size");
 
+                // Handle async methods that need await (Http.send, etc.)
+                let needs_await =
+                    self.options.async_database && matches!(call.name.as_str(), "send");
+
+                if needs_await {
+                    self.write("await ");
+                }
+
                 if let Some(ref obj) = call.object {
                     self.transpile_expression(obj)?;
                     self.write(".");
@@ -1475,6 +1483,10 @@ impl Transpiler {
                 self.needs_async = true;
             }
             Expression::MethodCall(call) => {
+                // Http.send() is async
+                if call.name == "send" {
+                    self.needs_async = true;
+                }
                 if let Some(ref obj) = call.object {
                     self.scan_expression_for_async(obj);
                 }
