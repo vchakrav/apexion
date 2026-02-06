@@ -990,6 +990,303 @@ export namespace ApexJSON {
 }
 
 // ============================================================================
+// HTTP Callout Support
+// ============================================================================
+
+/**
+ * Apex HttpRequest class
+ * Used to construct HTTP requests for callouts
+ */
+export class HttpRequest {
+  private endpoint: string = "";
+  private method: string = "GET";
+  private headers: Map<string, string> = new Map();
+  private body: string = "";
+  private timeout: number = 120000; // 2 minutes default
+  private compressed: boolean = false;
+
+  setEndpoint(url: string): void {
+    this.endpoint = url;
+  }
+
+  getEndpoint(): string {
+    return this.endpoint;
+  }
+
+  setMethod(method: string): void {
+    this.method = method.toUpperCase();
+  }
+
+  getMethod(): string {
+    return this.method;
+  }
+
+  setHeader(key: string, value: string): void {
+    this.headers.set(key, value);
+  }
+
+  getHeader(key: string): string | null {
+    return this.headers.get(key) || null;
+  }
+
+  getHeaders(): Map<string, string> {
+    return this.headers;
+  }
+
+  setBody(body: string): void {
+    this.body = body;
+  }
+
+  getBody(): string {
+    return this.body;
+  }
+
+  setBodyAsBlob(blob: Blob): void {
+    // Simplified - would need async conversion in real impl
+    this.body = blob.toString();
+  }
+
+  setTimeout(timeout: number): void {
+    this.timeout = timeout;
+  }
+
+  getTimeout(): number {
+    return this.timeout;
+  }
+
+  setCompressed(compressed: boolean): void {
+    this.compressed = compressed;
+  }
+
+  getCompressed(): boolean {
+    return this.compressed;
+  }
+
+  setClientCertificateName(certName: string): void {
+    // Not implemented in browser context
+    console.warn("Client certificates not supported in browser context");
+  }
+}
+
+/**
+ * Apex HttpResponse class
+ * Represents the response from an HTTP callout
+ */
+export class HttpResponse {
+  private statusCode: number;
+  private status: string;
+  private body: string;
+  private headers: Map<string, string>;
+
+  constructor(
+    statusCode: number,
+    status: string,
+    body: string,
+    headers?: Map<string, string>,
+  ) {
+    this.statusCode = statusCode;
+    this.status = status;
+    this.body = body;
+    this.headers = headers || new Map();
+  }
+
+  getStatusCode(): number {
+    return this.statusCode;
+  }
+
+  getStatus(): string {
+    return this.status;
+  }
+
+  getBody(): string {
+    return this.body;
+  }
+
+  getBodyAsBlob(): Blob {
+    return new Blob([this.body]);
+  }
+
+  getHeader(key: string): string | null {
+    return this.headers.get(key.toLowerCase()) || null;
+  }
+
+  getHeaderKeys(): string[] {
+    return Array.from(this.headers.keys());
+  }
+
+  getXmlStreamReader(): any {
+    // Would need XML parser implementation
+    throw new Error("XML parsing not implemented");
+  }
+}
+
+/**
+ * Apex Http class
+ * Used to send HTTP requests and receive responses
+ *
+ * Works in browsers, Service Workers, Node.js, and Deno
+ */
+export class Http {
+  /**
+   * Send an HTTP request and return the response
+   *
+   * @param request The HttpRequest to send
+   * @returns Promise<HttpResponse> The response from the server
+   */
+  async send(request: HttpRequest): Promise<HttpResponse> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      request.getTimeout(),
+    );
+
+    try {
+      const fetchOptions: RequestInit = {
+        method: request.getMethod(),
+        headers: Object.fromEntries(request.getHeaders()),
+        signal: controller.signal,
+      };
+
+      // Add body for non-GET requests
+      if (request.getMethod() !== "GET" && request.getMethod() !== "HEAD") {
+        fetchOptions.body = request.getBody();
+      }
+
+      // Add compression header if requested
+      if (request.getCompressed()) {
+        const headers = fetchOptions.headers as Record<string, string>;
+        headers["Accept-Encoding"] = "gzip, deflate";
+      }
+
+      const response = await fetch(request.getEndpoint(), fetchOptions);
+
+      // Extract response headers
+      const responseHeaders = new Map<string, string>();
+      response.headers.forEach((value, key) => {
+        responseHeaders.set(key.toLowerCase(), value);
+      });
+
+      const body = await response.text();
+
+      return new HttpResponse(
+        response.status,
+        response.statusText,
+        body,
+        responseHeaders,
+      );
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        throw new CalloutException("Request timed out");
+      }
+      throw new CalloutException(`HTTP callout failed: ${error.message}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/**
+ * Exception thrown when an HTTP callout fails
+ */
+export class CalloutException extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CalloutException";
+  }
+}
+
+/**
+ * Apex URL class
+ * Utility class for URL manipulation
+ */
+export class Url {
+  private urlString: string;
+  private parsedUrl: URL;
+
+  constructor(url: string) {
+    this.urlString = url;
+    this.parsedUrl = new URL(url);
+  }
+
+  static getCurrentRequestUrl(): Url {
+    if (typeof window !== "undefined") {
+      return new Url(window.location.href);
+    }
+    throw new Error("getCurrentRequestUrl not available in this context");
+  }
+
+  static getOrgDomainUrl(): Url {
+    // In browser context, return the current origin
+    if (typeof window !== "undefined") {
+      return new Url(window.location.origin);
+    }
+    // In Service Worker context
+    if (typeof self !== "undefined" && "location" in self) {
+      return new Url((self as any).location.origin);
+    }
+    return new Url("https://localhost");
+  }
+
+  static getSalesforceBaseUrl(): Url {
+    return Url.getOrgDomainUrl();
+  }
+
+  getAuthority(): string {
+    return this.parsedUrl.host;
+  }
+
+  getFile(): string {
+    return this.parsedUrl.pathname + this.parsedUrl.search;
+  }
+
+  getHost(): string {
+    return this.parsedUrl.hostname;
+  }
+
+  getPath(): string {
+    return this.parsedUrl.pathname;
+  }
+
+  getPort(): number {
+    return this.parsedUrl.port ? parseInt(this.parsedUrl.port) : -1;
+  }
+
+  getProtocol(): string {
+    return this.parsedUrl.protocol.replace(":", "");
+  }
+
+  getQuery(): string {
+    return this.parsedUrl.search.substring(1);
+  }
+
+  getRef(): string {
+    return this.parsedUrl.hash.substring(1);
+  }
+
+  getUserInfo(): string {
+    return (
+      this.parsedUrl.username +
+      (this.parsedUrl.password ? ":" + this.parsedUrl.password : "")
+    );
+  }
+
+  toExternalForm(): string {
+    return this.urlString;
+  }
+
+  sameFile(other: Url): boolean {
+    return (
+      this.parsedUrl.origin + this.parsedUrl.pathname ===
+      other.parsedUrl.origin + other.parsedUrl.pathname
+    );
+  }
+
+  toString(): string {
+    return this.urlString;
+  }
+}
+
+// ============================================================================
 // Export all
 // ============================================================================
 
@@ -1004,4 +1301,9 @@ export {
   ApexInteger as Apex_Integer,
   ApexMath as Apex_Math,
   ApexJSON as Apex_JSON,
+  Http as Apex_Http,
+  HttpRequest as Apex_HttpRequest,
+  HttpResponse as Apex_HttpResponse,
+  CalloutException as Apex_CalloutException,
+  Url as Apex_Url,
 };

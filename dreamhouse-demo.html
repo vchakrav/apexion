@@ -331,6 +331,9 @@ SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c FROM Property_
                 <button class="example-btn" id="loadPagedExample">
                     PropertyController + PagedResult
                 </button>
+                <button class="example-btn" id="loadHttpExample">
+                    HTTP Callout (Geocoding)
+                </button>
             </div>
             <textarea id="execApexInput" style="min-height: 300px">
 public class PropertySearch {
@@ -1082,6 +1085,177 @@ public class PropertySearch {
                 };
             }
 
+            // System namespace for Apex
+            window.System = {
+                debug: function (msg) {
+                    console.log("[System.debug]", msg);
+                },
+                now: function () {
+                    return new Date();
+                },
+                today: function () {
+                    const d = new Date();
+                    d.setHours(0, 0, 0, 0);
+                    return d;
+                },
+            };
+
+            // HTTP Callout classes for Apex
+            class HttpRequest {
+                constructor() {
+                    this._endpoint = "";
+                    this._method = "GET";
+                    this._headers = new Map();
+                    this._body = "";
+                    this._timeout = 120000;
+                }
+                setEndpoint(url) {
+                    this._endpoint = url;
+                }
+                getEndpoint() {
+                    return this._endpoint;
+                }
+                setMethod(method) {
+                    this._method = method.toUpperCase();
+                }
+                getMethod() {
+                    return this._method;
+                }
+                setHeader(key, value) {
+                    this._headers.set(key, value);
+                }
+                getHeader(key) {
+                    return this._headers.get(key) || null;
+                }
+                getHeaders() {
+                    return this._headers;
+                }
+                setBody(body) {
+                    this._body = body;
+                }
+                getBody() {
+                    return this._body;
+                }
+                setTimeout(timeout) {
+                    this._timeout = timeout;
+                }
+                getTimeout() {
+                    return this._timeout;
+                }
+            }
+
+            class HttpResponse {
+                constructor(statusCode, status, body, headers) {
+                    this._statusCode = statusCode;
+                    this._status = status;
+                    this._body = body;
+                    this._headers = headers || new Map();
+                }
+                getStatusCode() {
+                    return this._statusCode;
+                }
+                getStatus() {
+                    return this._status;
+                }
+                getBody() {
+                    return this._body;
+                }
+                getHeader(key) {
+                    return this._headers.get(key.toLowerCase()) || null;
+                }
+                getHeaderKeys() {
+                    return Array.from(this._headers.keys());
+                }
+            }
+
+            class Http {
+                async send(request) {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(
+                        () => controller.abort(),
+                        request.getTimeout(),
+                    );
+
+                    try {
+                        const fetchOptions = {
+                            method: request.getMethod(),
+                            headers: Object.fromEntries(request.getHeaders()),
+                            signal: controller.signal,
+                        };
+
+                        if (
+                            request.getMethod() !== "GET" &&
+                            request.getMethod() !== "HEAD"
+                        ) {
+                            fetchOptions.body = request.getBody();
+                        }
+
+                        console.log("[Http] Calling:", request.getEndpoint());
+                        const response = await fetch(
+                            request.getEndpoint(),
+                            fetchOptions,
+                        );
+
+                        const responseHeaders = new Map();
+                        response.headers.forEach((value, key) => {
+                            responseHeaders.set(key.toLowerCase(), value);
+                        });
+
+                        const body = await response.text();
+                        console.log(
+                            "[Http] Response:",
+                            response.status,
+                            body.substring(0, 200),
+                        );
+
+                        return new HttpResponse(
+                            response.status,
+                            response.statusText,
+                            body,
+                            responseHeaders,
+                        );
+                    } catch (error) {
+                        if (error.name === "AbortError") {
+                            throw new Error(
+                                "CalloutException: Request timed out",
+                            );
+                        }
+                        throw new Error("CalloutException: " + error.message);
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                }
+            }
+
+            // URL class for Apex
+            class ApexUrl {
+                constructor(url) {
+                    this._url = url;
+                    this._parsed = new URL(url);
+                }
+                static getOrgDomainUrl() {
+                    return new ApexUrl(window.location.origin);
+                }
+                toExternalForm() {
+                    return this._url;
+                }
+                getHost() {
+                    return this._parsed.hostname;
+                }
+                getProtocol() {
+                    return this._parsed.protocol.replace(":", "");
+                }
+                toString() {
+                    return this._url;
+                }
+            }
+
+            // Make HTTP classes available globally for transpiled code
+            window.Http = Http;
+            window.HttpRequest = HttpRequest;
+            window.HttpResponse = HttpResponse;
+            window.URL = ApexUrl; // Note: This shadows the native URL class
+
             // Transpile button - just show the transpiled code
             document
                 .getElementById("transpileBtn")
@@ -1290,6 +1464,57 @@ public class PropertyController {
 }`;
                     document.getElementById("methodCall").value =
                         "PropertyController.getPagedPropertyList('Boston', 1000000, 2, 1, 5, 1)";
+                });
+
+            // Load HTTP Callout example (Geocoding)
+            document
+                .getElementById("loadHttpExample")
+                .addEventListener("click", () => {
+                    document.getElementById("execApexInput").value =
+                        `// Simple geocoding service using OpenStreetMap Nominatim API
+public class GeocodingService {
+    private static final String BASE_URL = 'https://nominatim.openstreetmap.org/search?format=json';
+
+    // Geocode an address and return coordinates
+    public static Map<String, Decimal> geocodeAddress(String street, String city, String state) {
+        String geocodingUrl = BASE_URL;
+
+        if (street != null && street.length() > 0) {
+            geocodingUrl += '&street=' + street;
+        }
+        if (city != null && city.length() > 0) {
+            geocodingUrl += '&city=' + city;
+        }
+        if (state != null && state.length() > 0) {
+            geocodingUrl += '&state=' + state;
+        }
+        geocodingUrl += '&country=USA';
+
+        Http http = new Http();
+        HttpRequest request = new HttpRequest();
+        request.setEndpoint(geocodingUrl);
+        request.setMethod('GET');
+        request.setHeader('User-Agent', 'ApexRust-Demo/1.0');
+
+        HttpResponse response = http.send(request);
+
+        Map<String, Decimal> result = new Map<String, Decimal>();
+
+        if (response.getStatusCode() == 200) {
+            String body = response.getBody();
+            // Parse JSON response - simplified for demo
+            // In real Apex you'd use JSON.deserialize
+            System.debug('Geocoding response: ' + body);
+            result.put('status', 200);
+        } else {
+            result.put('status', response.getStatusCode());
+        }
+
+        return result;
+    }
+}`;
+                    document.getElementById("methodCall").value =
+                        "GeocodingService.geocodeAddress('1600 Pennsylvania Ave', 'Washington', 'DC')";
                 });
 
             initialize();
