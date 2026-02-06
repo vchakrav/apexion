@@ -1227,11 +1227,14 @@ public class PropertySearch {
                 }
             }
 
+            // Save native URL class before any shadowing
+            const NativeURL = window.URL;
+
             // URL class for Apex
             class ApexUrl {
                 constructor(url) {
                     this._url = url;
-                    this._parsed = new URL(url);
+                    this._parsed = new NativeURL(url); // Use saved native URL
                 }
                 static getOrgDomainUrl() {
                     return new ApexUrl(window.location.origin);
@@ -1254,7 +1257,7 @@ public class PropertySearch {
             window.Http = Http;
             window.HttpRequest = HttpRequest;
             window.HttpResponse = HttpResponse;
-            window.URL = ApexUrl; // Note: This shadows the native URL class
+            window.Url = ApexUrl; // Apex uses 'Url' not 'URL'
 
             // Transpile button - just show the transpiled code
             document
