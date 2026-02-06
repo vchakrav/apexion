@@ -1085,6 +1085,30 @@ public class PropertySearch {
                 };
             }
 
+            // Add Apex-style methods to Array prototype for List compatibility
+            if (!Array.prototype.get) {
+                Array.prototype.get = function (index) {
+                    return this[index];
+                };
+            }
+            if (!Array.prototype.set) {
+                Array.prototype.set = function (index, value) {
+                    this[index] = value;
+                };
+            }
+            if (!Array.prototype.add) {
+                Array.prototype.add = function (value) {
+                    this.push(value);
+                };
+            }
+            if (!Array.prototype.size) {
+                Object.defineProperty(Array.prototype, "size", {
+                    get: function () {
+                        return this.length;
+                    },
+                });
+            }
+
             // System namespace for Apex
             window.System = {
                 debug: function (msg) {
@@ -1097,6 +1121,25 @@ public class PropertySearch {
                     const d = new Date();
                     d.setHours(0, 0, 0, 0);
                     return d;
+                },
+            };
+
+            // JSON class for Apex - provides serialize/deserialize methods
+            window.JSON = {
+                // Original native JSON methods
+                ...window.JSON,
+                // Apex-style methods
+                serialize: function (obj) {
+                    return window.JSON.stringify(obj);
+                },
+                deserialize: function (jsonString, apexType) {
+                    return window.JSON.parse(jsonString);
+                },
+                deserializeUntyped: function (jsonString) {
+                    return window.JSON.parse(jsonString);
+                },
+                serializePretty: function (obj) {
+                    return window.JSON.stringify(obj, null, 2);
                 },
             };
 
@@ -1478,8 +1521,8 @@ public class PropertyController {
 public class GeocodingService {
     private static final String BASE_URL = 'https://nominatim.openstreetmap.org/search?format=json';
 
-    // Geocode an address and return coordinates
-    public static Map<String, Decimal> geocodeAddress(String street, String city, String state) {
+    // Geocode an address and return coordinates as a simple object
+    public static Map<String, Object> geocodeAddress(String street, String city, String state) {
         String geocodingUrl = BASE_URL;
 
         if (street != null && street.length() > 0) {
@@ -1491,7 +1534,7 @@ public class GeocodingService {
         if (state != null && state.length() > 0) {
             geocodingUrl += '&state=' + state;
         }
-        geocodingUrl += '&country=USA';
+        geocodingUrl += '&country=USA&limit=1';
 
         Http http = new Http();
         HttpRequest request = new HttpRequest();
@@ -1501,16 +1544,29 @@ public class GeocodingService {
 
         HttpResponse response = http.send(request);
 
-        Map<String, Decimal> result = new Map<String, Decimal>();
+        Map<String, Object> result = new Map<String, Object>();
+        result.put('statusCode', response.getStatusCode());
 
         if (response.getStatusCode() == 200) {
             String body = response.getBody();
-            // Parse JSON response - simplified for demo
-            // In real Apex you'd use JSON.deserialize
             System.debug('Geocoding response: ' + body);
-            result.put('status', 200);
+
+            // Parse JSON array response using JSON class
+            List<Object> locations = (List<Object>) JSON.deserializeUntyped(body);
+
+            if (locations.size() > 0) {
+                Map<String, Object> location = (Map<String, Object>) locations.get(0);
+                result.put('found', true);
+                result.put('displayName', location.get('display_name'));
+                result.put('latitude', location.get('lat'));
+                result.put('longitude', location.get('lon'));
+            } else {
+                result.put('found', false);
+                result.put('message', 'No results found for address');
+            }
         } else {
-            result.put('status', response.getStatusCode());
+            result.put('found', false);
+            result.put('message', 'HTTP error: ' + response.getStatusCode());
         }
 
         return result;
