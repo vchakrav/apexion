@@ -215,6 +215,7 @@
             "
         >
             <rmx-remix
+                id="remixApp"
                 src="https://agt-dev.files.remix.app/com_remixlabs_vijay/_rmx_files/sfdc_ui_test.remix"
                 style="display: block; width: 100%; height: 100%"
             ></rmx-remix>
@@ -348,8 +349,20 @@ public class PropertySearch {
             <pre id="registerResult">Initializing...</pre>
         </div>
 
-        <!-- Section 4: How it works -->
-        <h2>4. How It Works</h2>
+        <!-- Section 4: Deploy to Server -->
+        <h2>4. Deploy to Bun Server</h2>
+        <div class="panel">
+            <p>
+                Push the schema, data, and all registered Apex to a local Bun
+                server at <code>http://localhost:3000</code>. Start it with:
+                <code>bun run apex-server.ts</code>
+            </p>
+            <button id="deployBtn" disabled>Deploy to Server</button>
+            <pre id="deployResult">Initializing...</pre>
+        </div>
+
+        <!-- Section 5: How it works -->
+        <h2>5. How It Works</h2>
         <div class="panel">
             <pre>
 <span class="warning">&lt;apex-runtime&gt; Web Component</span>
@@ -558,6 +571,47 @@ public with sharing class PropertyController {
 
                     document.getElementById("fetchBtn").disabled = false;
                     document.getElementById("registerBtn").disabled = false;
+                    document.getElementById("deployBtn").disabled = false;
+
+                    // 4. Wire up Remix <-> Apex bridge
+                    const remixApp = document.getElementById("remixApp");
+                    if (remixApp && remixApp.addRemixEventListener) {
+                        remixApp.addRemixEventListener(
+                            "remix/apex/call",
+                            async (args, cb) => {
+                                try {
+                                    const result = await apex.callApex(
+                                        args.route,
+                                        args.params || {},
+                                    );
+                                    cb(result);
+                                } catch (err) {
+                                    cb({ error: err.message });
+                                }
+                            },
+                        );
+
+                        remixApp.addRemixEventListener(
+                            "remix/apex/routes",
+                            async (args, cb) => {
+                                cb(apex.routes);
+                            },
+                        );
+
+                        remixApp.addRemixEventListener(
+                            "remix/apex/register",
+                            async (args, cb) => {
+                                try {
+                                    const result = await apex.registerApex(
+                                        args.source,
+                                    );
+                                    cb(result);
+                                } catch (err) {
+                                    cb({ error: err.message });
+                                }
+                            },
+                        );
+                    }
 
                     status.textContent = `Ready! ${routes.length} Apex route(s) registered.`;
                     status.className = "ready";
@@ -680,6 +734,57 @@ public with sharing class PropertyController {
                             apex.routes.length;
                     } catch (err) {
                         resultEl.innerHTML = `<span class="error">Registration error: ${escapeHtml(err.message)}</span>`;
+                    }
+                });
+
+            // ================================================================
+            // Deploy to Bun Server
+            // ================================================================
+
+            document
+                .getElementById("deployBtn")
+                .addEventListener("click", async () => {
+                    const resultEl = document.getElementById("deployResult");
+                    resultEl.innerHTML =
+                        '<span class="info">Deploying to server...</span>';
+
+                    try {
+                        // Gather all Apex sources: the main controller + custom
+                        const apexSources = [PROPERTY_CONTROLLER_APEX];
+                        const customApex = document
+                            .getElementById("customApex")
+                            .value.trim();
+                        if (customApex) {
+                            apexSources.push(customApex);
+                        }
+
+                        const response = await fetch("/deploy", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                                schema: SCHEMA,
+                                ddl: DDL,
+                                seedSql: SEED_SQL,
+                                apex: apexSources,
+                            }),
+                        });
+
+                        const data = await response.json();
+
+                        if (data.success) {
+                            let html = `<span class="success">Deployed ${data.routes.length} route(s) to server!</span>\n\n`;
+                            for (const route of data.routes) {
+                                html += `  <span class="sql">POST http://localhost:3000/apex/${escapeHtml(route)}</span>\n`;
+                            }
+                            html += `\n<span class="info">Try: curl -X POST http://localhost:3000/apex/${data.routes[0] || "..."} -H 'Content-Type: application/json' -d '{...}'</span>`;
+                            resultEl.innerHTML = html;
+                        } else {
+                            resultEl.innerHTML = `<span class="error">Deploy error: ${escapeHtml(data.error)}</span>`;
+                        }
+                    } catch (err) {
+                        resultEl.innerHTML = `<span class="error">Deploy failed: ${escapeHtml(err.message)}\n\nIs the server running? Start with: bun run apex-server.ts</span>`;
                     }
                 });
 
