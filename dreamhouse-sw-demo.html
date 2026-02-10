@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Dreamhouse - Apex Runtime Demo</title>
+        <script src="https://remix.app/js/rmx-remix.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+        <style>
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 20px;
+                background: #1a1a2e;
+                color: #eee;
+            }
+            h1 {
+                color: #00d9ff;
+            }
+            h2 {
+                color: #00ff88;
+                margin-top: 30px;
+            }
+            h3 {
+                color: #ffd93d;
+                margin-top: 20px;
+            }
+            .panel {
+                background: #16213e;
+                border: 1px solid #0f3460;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 15px 0;
+            }
+            textarea {
+                width: 100%;
+                min-height: 150px;
+                background: #0f0f23;
+                color: #00ff88;
+                border: 1px solid #0f3460;
+                border-radius: 4px;
+                padding: 12px;
+                font-family: "Monaco", "Consolas", monospace;
+                font-size: 14px;
+                resize: vertical;
+                box-sizing: border-box;
+            }
+            input[type="text"] {
+                padding: 8px;
+                background: #0f0f23;
+                color: #00ff88;
+                border: 1px solid #0f3460;
+                border-radius: 4px;
+                font-family: "Monaco", "Consolas", monospace;
+            }
+            button {
+                background: #e94560;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                margin: 5px 5px 5px 0;
+                transition: background 0.2s;
+            }
+            button:hover {
+                background: #ff6b6b;
+            }
+            button:disabled {
+                background: #333;
+                cursor: not-allowed;
+            }
+            button.secondary {
+                background: #0f3460;
+            }
+            button.secondary:hover {
+                background: #1a4a7a;
+            }
+            pre {
+                background: #0f0f23;
+                border: 1px solid #0f3460;
+                border-radius: 4px;
+                padding: 15px;
+                overflow-x: auto;
+                font-size: 13px;
+                white-space: pre-wrap;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+            .success {
+                color: #00ff88;
+            }
+            .error {
+                color: #ff6b6b;
+            }
+            .warning {
+                color: #ffd93d;
+            }
+            .sql {
+                color: #00d9ff;
+            }
+            .info {
+                color: #888;
+            }
+            code {
+                color: #00d9ff;
+                background: #0f0f23;
+                padding: 2px 6px;
+                border-radius: 3px;
+            }
+            #status {
+                padding: 12px;
+                border-radius: 4px;
+                margin: 15px 0;
+                font-weight: bold;
+            }
+            #status.loading {
+                background: #0f3460;
+            }
+            #status.ready {
+                background: #1e5128;
+            }
+            #status.error {
+                background: #5c1a1a;
+            }
+            .stats {
+                display: flex;
+                gap: 20px;
+                margin: 15px 0;
+                flex-wrap: wrap;
+            }
+            .stat-box {
+                background: #0f3460;
+                padding: 15px 25px;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .stat-box .number {
+                font-size: 32px;
+                font-weight: bold;
+                color: #00d9ff;
+            }
+            .stat-box .label {
+                color: #888;
+                font-size: 12px;
+                text-transform: uppercase;
+            }
+            .route-list {
+                list-style: none;
+                padding: 0;
+                margin: 10px 0;
+            }
+            .route-list li {
+                padding: 6px 12px;
+                margin: 4px 0;
+                background: #0f3460;
+                border-radius: 4px;
+                font-family: "Monaco", "Consolas", monospace;
+                font-size: 13px;
+                color: #00d9ff;
+            }
+            .example-btn {
+                background: #0f3460;
+                font-size: 12px;
+                padding: 8px 12px;
+                margin: 3px;
+            }
+            .example-btn:hover {
+                background: #1a4a7a;
+            }
+            .fetch-demo {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            .method-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            .method-badge.get {
+                background: #1e5128;
+                color: #00ff88;
+            }
+            .method-badge.post {
+                background: #0f3460;
+                color: #00d9ff;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Dreamhouse - Apex Runtime Demo</h1>
+        <p>
+            Apex methods run inside an <code>&lt;apex-runtime&gt;</code> web
+            component. Call them via
+            <code>apex.callApex('ClassName/methodName', params)</code>.
+        </p>
+
+        <apex-runtime id="apex"></apex-runtime>
+
+        <div
+            style="
+                width: 390px;
+                height: 844px;
+                border: 1px solid #0f3460;
+                border-radius: 8px;
+                overflow: hidden;
+            "
+        >
+            <rmx-remix
+                src="https://agt-dev.files.remix.app/com_remixlabs_vijay/_rmx_files/sfdc_ui_test.remix"
+                style="display: block; width: 100%; height: 100%"
+            ></rmx-remix>
+        </div>
+
+        <div id="status" class="loading">Initializing...</div>
+
+        <div class="stats" id="stats" style="display: none">
+            <div class="stat-box">
+                <div class="number" id="routeCount">0</div>
+                <div class="label">Routes</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" id="propertyCount">0</div>
+                <div class="label">Properties</div>
+            </div>
+            <div class="stat-box">
+                <div class="number" id="brokerCount">0</div>
+                <div class="label">Brokers</div>
+            </div>
+        </div>
+
+        <!-- Section 1: Registered Routes -->
+        <h2>1. Registered Apex Routes</h2>
+        <div class="panel">
+            <p>
+                These <code>@AuraEnabled</code> methods were registered as HTTP
+                endpoints:
+            </p>
+            <ul class="route-list" id="routeList">
+                <li class="info">Loading...</li>
+            </ul>
+        </div>
+
+        <!-- Section 2: Call Apex Methods -->
+        <h2>2. Call Apex Methods</h2>
+        <div class="panel">
+            <p>Invoke Apex methods directly via the web component.</p>
+
+            <div style="margin-bottom: 15px">
+                <strong>Examples:</strong>
+                <button
+                    class="example-btn"
+                    data-route="PropertyController/getPagedPropertyList"
+                    data-body='{"searchKey":"Boston","maxPrice":1000000,"minBedrooms":0,"minBathrooms":0,"pageSize":5,"pageNumber":1}'
+                >
+                    Search Boston
+                </button>
+                <button
+                    class="example-btn"
+                    data-route="PropertyController/getPagedPropertyList"
+                    data-body='{"searchKey":"","maxPrice":600000,"minBedrooms":2,"minBathrooms":1,"pageSize":10,"pageNumber":1}'
+                >
+                    Under $600K
+                </button>
+                <button
+                    class="example-btn"
+                    data-route="PropertyController/getPagedPropertyList"
+                    data-body='{"searchKey":"","maxPrice":9999999,"minBedrooms":4,"minBathrooms":3,"pageSize":10,"pageNumber":1}'
+                >
+                    4+ Beds, 3+ Baths
+                </button>
+                <button
+                    class="example-btn"
+                    data-route="PropertyController/getPagedPropertyList"
+                    data-body='{"searchKey":"Cambridge","maxPrice":9999999,"minBedrooms":0,"minBathrooms":0,"pageSize":3,"pageNumber":1}'
+                >
+                    Cambridge Page 1
+                </button>
+                <button
+                    class="example-btn"
+                    data-route="PropertyController/getPagedPropertyList"
+                    data-body='{"searchKey":"Cambridge","maxPrice":9999999,"minBedrooms":0,"minBathrooms":0,"pageSize":3,"pageNumber":2}'
+                >
+                    Cambridge Page 2
+                </button>
+            </div>
+
+            <div class="fetch-demo">
+                <input
+                    type="text"
+                    id="fetchRoute"
+                    value="PropertyController/getPagedPropertyList"
+                    style="flex: 1; min-width: 300px"
+                />
+                <button id="fetchBtn" disabled>Call Apex</button>
+            </div>
+            <br />
+            <div>
+                <strong>Request Body (JSON):</strong>
+            </div>
+            <textarea id="fetchBody" style="min-height: 80px">
+{"searchKey":"Boston","maxPrice":1000000,"minBedrooms":0,"minBathrooms":0,"pageSize":5,"pageNumber":1}</textarea
+            >
+            <pre id="fetchResult">Initializing...</pre>
+        </div>
+
+        <!-- Section 3: Register Custom Apex -->
+        <h2>3. Register Your Own Apex</h2>
+        <div class="panel">
+            <p>
+                Write Apex with <code>@AuraEnabled</code> methods and register
+                them as new HTTP endpoints:
+            </p>
+            <textarea id="customApex" style="min-height: 250px">
+public class PropertySearch {
+    @AuraEnabled(cacheable=true)
+    public static List<Property__c> searchByCity(String city) {
+        String pattern = '%' + city + '%';
+        return [
+            SELECT Id, Name, Address__c, City__c, Price__c, Beds__c, Baths__c
+            FROM Property__c
+            WHERE City__c LIKE :pattern
+            ORDER BY Price__c
+        ];
+    }
+
+    @AuraEnabled
+    public static List<Property__c> getAffordableProperties(Decimal maxPrice) {
+        return [
+            SELECT Id, Name, City__c, Price__c
+            FROM Property__c
+            WHERE Price__c <= :maxPrice
+            ORDER BY Price__c
+        ];
+    }
+}</textarea
+            >
+            <br /><br />
+            <button id="registerBtn" disabled>Register Apex</button>
+            <pre id="registerResult">Initializing...</pre>
+        </div>
+
+        <!-- Section 4: How it works -->
+        <h2>4. How It Works</h2>
+        <div class="panel">
+            <pre>
+<span class="warning">&lt;apex-runtime&gt; Web Component</span>
+
+    apex.initialize({ schema, ddl, seedSql })
+        |
+        +--> Load ApexRust WASM (pkg/apexrust.js)
+        +--> Load SQLite (sql.js)
+        +--> Create tables & seed data
+
+    apex.registerApex(apexSource)
+        |
+        +--> Parse Apex source (WASM)
+        +--> Extract @AuraEnabled methods (regex)
+        +--> Transpile to JavaScript (WASM)
+        +--> Evaluate & register handlers
+
+    apex.callApex('ClassName/method', params)
+        |
+        +--> Look up handler
+        +--> Call transpiled method
+        +--> SOQL -> SQL (WASM converter)
+        +--> Execute SQL (SQLite)
+        +--> Return results
+
+<span class="success">Everything runs in the main thread — no workers needed!</span>
+</pre>
+        </div>
+
+        <script type="module">
+            import "./apex-runtime.js";
+
+            const apex = document.getElementById("apex");
+            window.apex = apex; // expose for console usage
+
+            // ================================================================
+            // Schema and Seed Data
+            // ================================================================
+
+            const SCHEMA = [
+                {
+                    name: "Broker__c",
+                    fields: [
+                        { name: "Id", type: "Id" },
+                        { name: "Name", type: "String" },
+                        { name: "Title__c", type: "String" },
+                        { name: "Phone__c", type: "Phone" },
+                        { name: "Email__c", type: "Email" },
+                    ],
+                },
+                {
+                    name: "Property__c",
+                    fields: [
+                        { name: "Id", type: "Id" },
+                        { name: "Name", type: "String" },
+                        { name: "Address__c", type: "String" },
+                        { name: "City__c", type: "String" },
+                        { name: "State__c", type: "String" },
+                        { name: "Price__c", type: "Currency" },
+                        { name: "Beds__c", type: "Integer" },
+                        { name: "Baths__c", type: "Integer" },
+                        { name: "Tags__c", type: "String" },
+                        { name: "Status__c", type: "Picklist" },
+                        { name: "Thumbnail__c", type: "Url" },
+                        {
+                            name: "Broker__c",
+                            type: "Lookup",
+                            referenceTo: "Broker__c",
+                        },
+                    ],
+                },
+                {
+                    name: "Contact",
+                    fields: [
+                        { name: "Id", type: "Id" },
+                        { name: "FirstName", type: "String" },
+                        { name: "LastName", type: "String" },
+                        { name: "Phone", type: "Phone" },
+                        { name: "Email", type: "Email" },
+                    ],
+                },
+            ];
+
+            const DDL = [
+                `CREATE TABLE broker__c (id TEXT PRIMARY KEY, name TEXT, title__c TEXT, phone__c TEXT, email__c TEXT)`,
+                `CREATE TABLE property__c (id TEXT PRIMARY KEY, name TEXT, address__c TEXT, city__c TEXT, state__c TEXT, price__c REAL, beds__c INTEGER, baths__c INTEGER, tags__c TEXT, status__c TEXT, thumbnail__c TEXT, broker__c TEXT)`,
+                `CREATE TABLE contact (id TEXT PRIMARY KEY, firstname TEXT, lastname TEXT, phone TEXT, email TEXT)`,
+            ];
+
+            const SEED_SQL = [
+                // Brokers
+                `INSERT INTO broker__c VALUES ('broker-001','Caroline Kingsley','Senior Broker','617-244-3672','caroline@dreamhouse.demo')`,
+                `INSERT INTO broker__c VALUES ('broker-002','Michael Jones','Senior Broker','617-244-3672','michael@dreamhouse.demo')`,
+                `INSERT INTO broker__c VALUES ('broker-003','Jonathan Bradley','Senior Broker','617-244-3672','jonathan@dreamhouse.demo')`,
+                `INSERT INTO broker__c VALUES ('broker-004','Jennifer Wu','Senior Broker','617-244-3672','jen@dreamhouse.demo')`,
+                // Properties
+                `INSERT INTO property__c VALUES ('prop-001','Stunning Victorian','18 Henry St','Cambridge','MA',975000,4,3,'victorian','Available',NULL,'broker-001')`,
+                `INSERT INTO property__c VALUES ('prop-002','Ultimate Sophistication','24 Pearl St','Cambridge','MA',1200000,5,4,'colonial','Contracted',NULL,'broker-002')`,
+                `INSERT INTO property__c VALUES ('prop-003','Modern City Living','72 Francis St','Boston','MA',825000,5,4,'contemporary','Pre Market',NULL,'broker-003')`,
+                `INSERT INTO property__c VALUES ('prop-004','Stunning Colonial','32 Prince St','Cambridge','MA',930000,5,4,'colonial','Available',NULL,'broker-004')`,
+                `INSERT INTO property__c VALUES ('prop-005','Waterfront in City','110 Baxter St','Boston','MA',450000,3,2,'contemporary','Available',NULL,'broker-001')`,
+                `INSERT INTO property__c VALUES ('prop-006','Lakefront Bliss','18 Newel St','Boston','MA',550000,4,3,'colonial','Available',NULL,'broker-002')`,
+                `INSERT INTO property__c VALUES ('prop-007','Mediterranean Haven','8 Orton Ave','Boston','MA',925000,4,3,'victorian','Available',NULL,'broker-003')`,
+                `INSERT INTO property__c VALUES ('prop-008','Urban Elegance','121 Harley St','Cambridge','MA',1100000,4,3,'contemporary','Available',NULL,'broker-004')`,
+                `INSERT INTO property__c VALUES ('prop-009','Cozy Cottage','55 Maple Ave','Boston','MA',380000,2,1,'cottage','Available',NULL,'broker-001')`,
+                `INSERT INTO property__c VALUES ('prop-010','Executive Estate','200 Park Lane','Cambridge','MA',1500000,6,5,'colonial','Available',NULL,'broker-002')`,
+                `INSERT INTO property__c VALUES ('prop-011','Downtown Loft','88 Main St','Boston','MA',520000,2,2,'contemporary','Available',NULL,'broker-003')`,
+                `INSERT INTO property__c VALUES ('prop-012','Family Home','42 Oak Street','Cambridge','MA',680000,4,2,'colonial','Available',NULL,'broker-004')`,
+                // Contacts
+                `INSERT INTO contact VALUES ('contact-001','Brad','Holmes','555-1234','brad@example.com')`,
+                `INSERT INTO contact VALUES ('contact-002','Leslie','Martin','555-5678','leslie@example.com')`,
+                `INSERT INTO contact VALUES ('contact-003','Anna','Jones','555-9012','anna@example.com')`,
+            ];
+
+            // The PropertyController Apex source to register
+            const PROPERTY_CONTROLLER_APEX = `
+public class PagedResult {
+    @AuraEnabled public Integer pageSize { get; set; }
+    @AuraEnabled public Integer pageNumber { get; set; }
+    @AuraEnabled public Integer totalItemCount { get; set; }
+    @AuraEnabled public List<Object> records { get; set; }
+}
+
+public with sharing class PropertyController {
+    private static final Decimal DEFAULT_MAX_PRICE = 9999999;
+    private static final Integer DEFAULT_PAGE_SIZE = 9;
+
+    @AuraEnabled(cacheable=true)
+    public static PagedResult getPagedPropertyList(
+        String searchKey,
+        Decimal maxPrice,
+        Integer minBedrooms,
+        Integer minBathrooms,
+        Integer pageSize,
+        Integer pageNumber
+    ) {
+        Decimal safeMaxPrice = maxPrice ?? DEFAULT_MAX_PRICE;
+        Integer safeMinBedrooms = minBedrooms ?? 0;
+        Integer safeMinBathrooms = minBathrooms ?? 0;
+        Integer safePageSize = pageSize ?? DEFAULT_PAGE_SIZE;
+        Integer safePageNumber = pageNumber ?? 1;
+
+        String searchPattern = '%' + searchKey + '%';
+        Integer offset = (safePageNumber - 1) * safePageSize;
+
+        PagedResult result = new PagedResult();
+        result.pageSize = safePageSize;
+        result.pageNumber = safePageNumber;
+        result.totalItemCount = [
+            SELECT COUNT()
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+        ];
+        result.records = [
+            SELECT Id, Name, Address__c, City__c, State__c, Price__c, Beds__c, Baths__c
+            FROM Property__c
+            WHERE (Name LIKE :searchPattern OR City__c LIKE :searchPattern)
+                AND Price__c <= :safeMaxPrice
+                AND Beds__c >= :safeMinBedrooms
+                AND Baths__c >= :safeMinBathrooms
+            ORDER BY Price__c
+            LIMIT :safePageSize
+            OFFSET :offset
+        ];
+        return result;
+    }
+}`;
+
+            // ================================================================
+            // Initialization
+            // ================================================================
+
+            const status = document.getElementById("status");
+
+            async function initialize() {
+                try {
+                    // 1. Initialize WASM + SQLite
+                    status.textContent = "Loading WASM + SQLite...";
+
+                    await apex.initialize({
+                        schema: SCHEMA,
+                        ddl: DDL,
+                        seedSql: SEED_SQL,
+                    });
+
+                    // 2. Register the PropertyController Apex code
+                    status.textContent =
+                        "Registering PropertyController Apex...";
+
+                    const registerResult = await apex.registerApex(
+                        PROPERTY_CONTROLLER_APEX,
+                    );
+
+                    // 3. Update UI
+                    const routes = registerResult.routes || [];
+                    updateRouteList(routes);
+
+                    document.getElementById("routeCount").textContent =
+                        routes.length;
+                    document.getElementById("propertyCount").textContent = "12";
+                    document.getElementById("brokerCount").textContent = "4";
+                    document.getElementById("stats").style.display = "flex";
+
+                    document.getElementById("fetchBtn").disabled = false;
+                    document.getElementById("registerBtn").disabled = false;
+
+                    status.textContent = `Ready! ${routes.length} Apex route(s) registered.`;
+                    status.className = "ready";
+                } catch (err) {
+                    status.textContent = `Error: ${err.message}`;
+                    status.className = "error";
+                    console.error(err);
+                }
+            }
+
+            function updateRouteList(routes) {
+                const list = document.getElementById("routeList");
+                list.innerHTML = "";
+                for (const route of routes) {
+                    const li = document.createElement("li");
+                    li.innerHTML = `<span class="method-badge post">POST</span> /apex/${escapeHtml(route)}`;
+                    list.appendChild(li);
+                }
+                if (routes.length === 0) {
+                    const li = document.createElement("li");
+                    li.className = "info";
+                    li.textContent = "No routes registered yet";
+                    list.appendChild(li);
+                }
+            }
+
+            // ================================================================
+            // Call Apex Button
+            // ================================================================
+
+            document
+                .getElementById("fetchBtn")
+                .addEventListener("click", async () => {
+                    const route = document.getElementById("fetchRoute").value;
+                    const body = document.getElementById("fetchBody").value;
+                    const resultEl = document.getElementById("fetchResult");
+
+                    resultEl.innerHTML =
+                        '<span class="info">Calling Apex...</span>';
+
+                    const startTime = performance.now();
+
+                    try {
+                        const params = body.trim() ? JSON.parse(body) : {};
+                        const data = await apex.callApex(route, params);
+                        const elapsed = (performance.now() - startTime).toFixed(
+                            1,
+                        );
+
+                        let html = "";
+                        html += `<span class="success">OK</span>`;
+                        html += `  <span class="info">(${elapsed}ms)</span>\n\n`;
+                        html += `<span class="warning">Response:</span>\n`;
+
+                        if (
+                            data &&
+                            data.records &&
+                            Array.isArray(data.records) &&
+                            data.records.length > 0
+                        ) {
+                            html += `<span class="info">totalItemCount: ${data.totalItemCount}, pageSize: ${data.pageSize}, pageNumber: ${data.pageNumber}</span>\n\n`;
+                            html += formatTable(data.records);
+                        } else if (Array.isArray(data) && data.length > 0) {
+                            html += formatTable(data);
+                        } else {
+                            html += `<span class="sql">${escapeHtml(JSON.stringify(data, null, 2))}</span>`;
+                        }
+
+                        resultEl.innerHTML = html;
+                    } catch (err) {
+                        resultEl.innerHTML = `<span class="error">Error: ${escapeHtml(err.message)}</span>`;
+                    }
+                });
+
+            // Example buttons
+            document
+                .querySelectorAll(".example-btn[data-route]")
+                .forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        document.getElementById("fetchRoute").value =
+                            btn.dataset.route;
+                        document.getElementById("fetchBody").value =
+                            btn.dataset.body || "{}";
+                    });
+                });
+
+            // ================================================================
+            // Register Custom Apex
+            // ================================================================
+
+            document
+                .getElementById("registerBtn")
+                .addEventListener("click", async () => {
+                    const source = document.getElementById("customApex").value;
+                    const resultEl = document.getElementById("registerResult");
+
+                    resultEl.innerHTML =
+                        '<span class="info">Registering...</span>';
+
+                    try {
+                        const result = await apex.registerApex(source);
+
+                        const routes = result.routes || [];
+                        let html = `<span class="success">Registered ${routes.length} route(s)!</span>\n\n`;
+
+                        for (const route of routes) {
+                            html += `  <span class="sql">${escapeHtml(route)}</span>\n`;
+                        }
+
+                        if (result.transpiled) {
+                            html += `\n<span class="warning">Transpiled JavaScript:</span>\n`;
+                            html += `<span class="info">${escapeHtml(result.transpiled)}</span>`;
+                        }
+
+                        resultEl.innerHTML = html;
+
+                        // Refresh the route list
+                        updateRouteList(apex.routes);
+                        document.getElementById("routeCount").textContent =
+                            apex.routes.length;
+                    } catch (err) {
+                        resultEl.innerHTML = `<span class="error">Registration error: ${escapeHtml(err.message)}</span>`;
+                    }
+                });
+
+            // ================================================================
+            // Utility Functions
+            // ================================================================
+
+            function formatTable(records) {
+                if (!records || records.length === 0)
+                    return '<span class="info">No records</span>';
+
+                const columns = Object.keys(records[0]);
+                const widths = columns.map((col, i) => {
+                    const maxVal = Math.max(
+                        ...records.map(
+                            (row) => String(row[col] ?? "NULL").length,
+                        ),
+                    );
+                    return Math.max(col.length, maxVal, 4);
+                });
+
+                let table = "";
+                table +=
+                    "| " +
+                    columns.map((col, i) => col.padEnd(widths[i])).join(" | ") +
+                    " |\n";
+                table +=
+                    "|-" +
+                    widths.map((w) => "-".repeat(w)).join("-|-") +
+                    "-|\n";
+
+                for (const row of records) {
+                    table +=
+                        "| " +
+                        columns
+                            .map((col, i) => {
+                                let str = String(row[col] ?? "NULL");
+                                if (
+                                    col.toLowerCase().includes("price") &&
+                                    typeof row[col] === "number"
+                                ) {
+                                    str = "$" + row[col].toLocaleString();
+                                }
+                                return str.padEnd(widths[i]);
+                            })
+                            .join(" | ") +
+                        " |\n";
+                }
+
+                return table;
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement("div");
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            // ================================================================
+            // Start
+            // ================================================================
+
+            initialize();
+        </script>
+    </body>
+</html>

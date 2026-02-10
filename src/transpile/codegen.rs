@@ -92,7 +92,7 @@ impl Transpiler {
         };
 
         // Class declaration
-        let abstract_mod = if class.modifiers.is_abstract {
+        let abstract_mod = if class.modifiers.is_abstract && self.options.typescript {
             "abstract "
         } else {
             ""
@@ -170,7 +170,7 @@ impl Transpiler {
         } else {
             ""
         };
-        let readonly = if field.modifiers.is_final {
+        let readonly = if field.modifiers.is_final && self.options.typescript {
             "readonly "
         } else {
             ""
@@ -212,7 +212,7 @@ impl Transpiler {
         } else {
             ""
         };
-        let abstract_mod = if method.modifiers.is_abstract {
+        let abstract_mod = if method.modifiers.is_abstract && self.options.typescript {
             "abstract "
         } else {
             ""
@@ -1575,6 +1575,10 @@ impl Transpiler {
     }
 
     fn access_modifier_to_ts(&self, access: &AccessModifier) -> &'static str {
+        if !self.options.typescript {
+            // JavaScript doesn't support access modifiers on class members
+            return "";
+        }
         match access {
             AccessModifier::Private => "private ",
             AccessModifier::Protected => "protected ",
